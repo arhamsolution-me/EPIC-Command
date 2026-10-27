@@ -184,10 +184,26 @@ def probe_local_nvr(
     }
 
 
-def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dict[str, Any], local_ip: str) -> bool:
+def remap_url_to_bridge(url: str, bridge_ip: str, bridge_port: int = 554) -> str:
+    """Remap an RTSP URL to point to this Edge Agent's bridge IP and port."""
+    if not url:
+        return url
+    try:
+        parts = urllib.parse.urlsplit(url)
+        if "@" in parts.netloc:
+            auth_part, _ = parts.netloc.split("@", 1)
+            new_netloc = f"{auth_part}@{bridge_ip}:{bridge_port}"
+        else:
+            new_netloc = f"{bridge_ip}:{bridge_port}"
+        return urllib.parse.urlunsplit((parts.scheme, new_netloc, parts.path, parts.query, parts.fragment))
+    except Exception:
+        return url
+
+
+def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dict[str, Any], bridge_ip: str) -> bool:
     """Register Agent, NVR, and cameras with Central EPIC Command backend."""
     server_url = server_url.rstrip("/")
-    print(f"\n[2/3] Registering with Central Server at {server_url}...")
+    print(f"\n[2/3] Registering with Central Server at {server_url} (Bridge IP: {bridge_ip})...")
 
     # Step A: Enroll Agent
     enroll_url = f"{server_url}/api/agent/create"
@@ -199,7 +215,7 @@ def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dic
             res_data = json.loads(resp.read().decode())
             agent_id = res_data.get("agent", {}).get("id")
             print(f"      [✓] Agent '{agent_name}' registered (ID: {agent_id})")
-    except Exception as e:
+    except Exception:
         # Agent might already exist, fetch agents list
         try:
             list_url = f"{server_url}/api/agent/list"
@@ -214,19 +230,28 @@ def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dic
         except Exception:
             pass
 
+    # Remap camera RTSP URLs to use the Bridge IP so Central MediaMTX can reach them
+    bridged_cameras = []
+    for c in nvr_info["cameras"]:
+        cam_copy = dict(c)
+        cam_copy["rtsp_stream_url"] = remap_url_to_bridge(c.get("rtsp_stream_url", ""), bridge_ip, 554)
+        if c.get("sub_stream_url"):
+            cam_copy["sub_stream_url"] = remap_url_to_bridge(c.get("sub_stream_url", ""), bridge_ip, 554)
+        bridged_cameras.append(cam_copy)
+
     # Step B: Register NVR and Cameras
     confirm_url = f"{server_url}/api/nvr/confirm"
     payload = {
         "agent_id": agent_id,
         "name": f"{agent_name} NVR",
-        "ip": nvr_info["ip"],
+        "ip": bridge_ip,
         "port": nvr_info["port"],
-        "rtsp_port": nvr_info["rtsp_port"],
+        "rtsp_port": 554,
         "username": "admin",
         "password": "",
         "status": "online",
         "vendor": nvr_info["vendor"],
-        "cameras": nvr_info["cameras"]
+        "cameras": bridged_cameras
     }
 
     try:
@@ -234,7 +259,7 @@ def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dic
         req = urllib.request.Request(confirm_url, data=data, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=5.0) as resp:
             res_data = json.loads(resp.read().decode())
-            print(f"      [✓] NVR and {len(nvr_info['cameras'])} Cameras saved to Central Database!")
+            print(f"      [✓] NVR and {len(bridged_cameras)} Cameras routed through Bridge IP ({bridge_ip})!")
             return True
     except Exception as e:
         print(f"      [!] Registration notice: {e}")
@@ -250,7 +275,7 @@ def start_rtsp_tcp_bridge(local_port: int, target_host: str, target_port: int):
     def pipe_data(src, dst):
         try:
             while True:
-                buf = src.recv(8192)
+                buf = src.recv(65536)
                 if not buf:
                     break
                 dst.sendall(buf)
@@ -267,20 +292,24 @@ def start_rtsp_tcp_bridge(local_port: int, target_host: str, target_port: int):
             server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server_sock.bind(("0.0.0.0", local_port))
-            server_sock.listen(10)
-            print(f"[3/3] RTSP Stream Bridge active on local port {local_port} ➔ {target_host}:{target_port}")
-            print("      Edge Agent is running and connected! (Press Ctrl+C to stop)\n")
+            server_sock.listen(50)
+            print(f"\n[3/3] RTSP Stream Bridge active on local port {local_port} ➔ {target_host}:{target_port}")
+            print("      Edge Agent is streaming live! (Press Ctrl+C to stop)\n")
 
             while True:
-                client_sock, addr = server_sock.accept()
+                client_sock, client_addr = server_sock.accept()
                 try:
                     target_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    target_sock.settimeout(10.0)
                     target_sock.connect((target_host, target_port))
+                    target_sock.settimeout(None)
+                    print(f"      [Stream] Active stream connection from {client_addr[0]}")
                     t1 = threading.Thread(target=pipe_data, args=(client_sock, target_sock), daemon=True)
                     t2 = threading.Thread(target=pipe_data, args=(target_sock, client_sock), daemon=True)
                     t1.start()
                     t2.start()
-                except Exception:
+                except Exception as ex:
+                    print(f"      [!] Stream connection notice: {ex}")
                     client_sock.close()
         except Exception as e:
             print(f"[!] Stream bridge notice: {e}")
@@ -296,6 +325,7 @@ def main():
     parser.add_argument("--nvr", help="Local NVR IP address (e.g. 200.0.0.25)")
     parser.add_argument("--user", default="admin", help="NVR Username (default: admin)")
     parser.add_argument("--password", "--pass", default="admin@mm@store@123", help="NVR Password")
+    parser.add_argument("--bridge-ip", help="Active IP of this machine reachable by Central Server (e.g. 10.254.4.2)")
     parser.add_argument("--http-port", type=int, default=37725, help="NVR HTTP Port (default: 37725 or 80)")
     parser.add_argument("--rtsp-port", type=int, default=554, help="NVR RTSP Port (default: 554)")
     args = parser.parse_args()
@@ -313,6 +343,18 @@ def main():
     http_port = args.http_port
     rtsp_port = args.rtsp_port
 
+    # Auto-detect default Bridge IP facing Central Server
+    detected_bridge = "10.254.4.2"
+    try:
+        server_host = urllib.parse.urlparse(server_url).hostname or "192.168.1.101"
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect((server_host, 80))
+            detected_bridge = s.getsockname()[0]
+    except Exception:
+        pass
+
+    bridge_ip = args.bridge_ip or (input(f"Enter Local Bridge IP facing Central Server [{detected_bridge}]: ").strip() if not args.server else detected_bridge) or detected_bridge
+
     # 1. Local Probe
     nvr_info = probe_local_nvr(
         ip=nvr_ip,
@@ -322,16 +364,10 @@ def main():
         rtsp_port=rtsp_port
     )
 
-    # 2. Register to Central Server
-    my_ip = "127.0.0.1"
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))
-            my_ip = s.getsockname()[0]
-    except Exception:
-        pass
+    print(f"      Active Edge Bridge IP : {bridge_ip}")
 
-    register_with_central_server(server_url, agent_name, nvr_info, my_ip)
+    # 2. Register to Central Server
+    register_with_central_server(server_url, agent_name, nvr_info, bridge_ip)
 
     # 3. Start Stream Bridge
     start_rtsp_tcp_bridge(554, nvr_ip, rtsp_port)

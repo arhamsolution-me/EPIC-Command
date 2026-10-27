@@ -119,12 +119,20 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
     ste = clean_loc(req.site) or clean_loc(target_agent.site)
     vend = req.vendor or "HIKVISION"
 
-    # Check if this NVR IP already exists in DB
-    existing_nvr = db.query(NVR).filter(NVR.ip == req.ip).first()
+    # Check if this NVR already exists in DB by agent, IP, or name
+    existing_nvr = None
+    if target_agent:
+        existing_nvr = db.query(NVR).filter(NVR.agent_id == target_agent.id).first()
+    if not existing_nvr:
+        existing_nvr = db.query(NVR).filter(NVR.ip == req.ip).first()
+    if not existing_nvr and nvr_name:
+        existing_nvr = db.query(NVR).filter(NVR.name == nvr_name).first()
+
     if existing_nvr:
-        # Update existing
+        # Update existing NVR with current bridged details
         existing_nvr.agent_id = target_agent.id
         existing_nvr.name = nvr_name
+        existing_nvr.ip = req.ip
         existing_nvr.port = req.port
         existing_nvr.rtsp_port = req.rtsp_port
         existing_nvr.username = req.username
@@ -160,6 +168,15 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
         )
         db.add(nvr)
         db.flush()
+
+    # Clean up any other obsolete duplicate NVR records for this agent or unreachable 200.0.0.25
+    obsolete_nvrs = db.query(NVR).filter(
+        NVR.id != nvr.id,
+        (NVR.agent_id == target_agent.id) | (NVR.ip == "200.0.0.25")
+    ).all()
+    for obs in obsolete_nvrs:
+        db.query(Camera).filter(Camera.nvr_id == obs.id).delete()
+        db.delete(obs)
 
     # Add cameras
     for cam in req.cameras:
