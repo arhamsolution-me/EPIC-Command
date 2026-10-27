@@ -110,6 +110,16 @@ export default function TopHeader({
             <UserIcon size={18} strokeWidth={2.4} />
           </div>
 
+          {/* User Name & Role Display */}
+          <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', lineHeight: 1.25, marginLeft: '2px' }}>
+            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0f172a' }}>
+              {user?.full_name || user?.username || 'User'}
+            </span>
+            <span style={{ fontSize: '0.7rem', color: '#059669', fontWeight: 600 }}>
+              {user?.is_superadmin ? 'Super Admin' : user?.role_name || 'Standard User'}
+            </span>
+          </div>
+
           {/* Small peach/pink rounded square with chevron icon */}
           <div style={{
             width: '24px',
@@ -139,13 +149,13 @@ export default function TopHeader({
           </div>
         </div>
 
-        {/* Profile Dropdown Menu matching user screenshot Image 1 */}
+        {/* Profile Dropdown Menu */}
         {isDropdownOpen && (
           <div style={{
             position: 'absolute',
             right: 0,
             top: 'calc(100% + 6px)',
-            width: '185px',
+            width: '210px',
             background: '#ffffff',
             borderRadius: '10px',
             border: '1px solid #e2e8f0',
@@ -154,6 +164,20 @@ export default function TopHeader({
             zIndex: 100,
             animation: 'fadeIn 0.12s ease'
           }}>
+            {/* User Profile Header in Dropdown */}
+            <div style={{
+              padding: '10px 12px 8px',
+              borderBottom: '1px solid #f1f5f9',
+              marginBottom: '4px'
+            }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {user?.full_name || user?.username}
+              </div>
+              <div style={{ fontSize: '0.71rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {user?.email}
+              </div>
+            </div>
+
             {/* Change Password Item */}
             <button
               type="button"
