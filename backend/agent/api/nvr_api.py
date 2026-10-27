@@ -318,6 +318,20 @@ def get_media_status():
     }
 
 
+@router.post("/media/sync")
+def sync_media_mtx():
+    """Manually force-sync all cameras to MediaMTX config and update engine."""
+    try:
+        media_manager.sync_from_database()
+        return {
+            "success": True,
+            "message": "MediaMTX synchronized with database successfully.",
+            "running": media_manager.is_running()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/stream/{camera_id}")
 def stream_camera(camera_id: int, db: Session = Depends(get_db)):
     """

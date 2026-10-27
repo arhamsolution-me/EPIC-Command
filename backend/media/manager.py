@@ -36,21 +36,29 @@ def clean_rtsp_url(url: str) -> str:
 
 class MediaMTXManager:
     """
-    Native Windows Process & Config Manager for MediaMTX.
+    Cross-platform Process & Config Manager for MediaMTX (Windows & Linux).
     Runs MediaMTX natively (Zero Docker) to provide ultra-low latency WebRTC streaming.
-    All files and executables remain strictly organized inside backend/media/.
+    All files remain strictly organized inside backend/media/ and /opt/ on Linux.
     """
 
     def __init__(self, media_dir: Optional[Path] = None):
         self.media_dir = media_dir or MEDIA_DIR
-        self.exe_path = self.media_dir / "mediamtx.exe"
-        self.config_path = self.media_dir / "mediamtx.yml"
+        self.exe_path = self.media_dir / "mediamtx.exe" if sys.platform == "win32" else Path("/opt/mediamtx")
         self.log_path = self.media_dir / "mediamtx.log"
         self.process: Optional[subprocess.Popen] = None
         self.webrtc_port = int(os.getenv("MEDIAMTX_WEBRTC_PORT", "8889"))
         self.hls_port = int(os.getenv("MEDIAMTX_HLS_PORT", "8888"))
         self.rtsp_port = int(os.getenv("MEDIAMTX_RTSP_PORT", "8554"))
         self.api_port = int(os.getenv("MEDIAMTX_API_PORT", "9997"))
+
+        # Determine primary config path:
+        env_cfg = os.getenv("MEDIAMTX_CONFIG_PATH")
+        if env_cfg and Path(env_cfg).parent.exists():
+            self.config_path = Path(env_cfg)
+        elif sys.platform != "win32" and Path("/opt/mediamtx.yml").exists():
+            self.config_path = Path("/opt/mediamtx.yml")
+        else:
+            self.config_path = self.media_dir / "mediamtx.yml"
 
     def is_port_in_use(self, port: int, host: str = "127.0.0.1") -> bool:
         """Check if MediaMTX port is listening."""
@@ -73,8 +81,8 @@ class MediaMTXManager:
         Uses low-latency TCP transport and sourceOnDemand.
         """
         lines = [
-            "# MediaMTX v1.9.3 Configuration for EPIC Command (WebRTC & RTSP Stream Engine)",
-            "# Native Windows - Zero Docker Required",
+            "# MediaMTX Configuration for EPIC Command (WebRTC & RTSP Stream Engine)",
+            "# Native Production - Zero Docker Required",
             "api: true",
             f"apiAddress: :{self.api_port}",
             "",
@@ -100,56 +108,154 @@ class MediaMTXManager:
             "paths:"
         ]
 
-        if not cameras:
-            lines.append("  all_others:")
-            lines.append("    source: publisher")
-        else:
-            for cam in cameras:
-                cam_id = getattr(cam, "id", None) or (cam.get("id") if isinstance(cam, dict) else None)
-                if not cam_id:
-                    continue
+        for cam in cameras:
+            cam_id = getattr(cam, "id", None) or (cam.get("id") if isinstance(cam, dict) else None)
+            if not cam_id:
+                continue
 
-                sub_url = getattr(cam, "sub_stream_url", None) or (cam.get("sub_stream_url") if isinstance(cam, dict) else None)
-                main_url = getattr(cam, "rtsp_stream_url", None) or (cam.get("rtsp_stream_url") if isinstance(cam, dict) else None)
+            sub_url = getattr(cam, "sub_stream_url", None) or (cam.get("sub_stream_url") if isinstance(cam, dict) else None)
+            main_url = getattr(cam, "rtsp_stream_url", None) or (cam.get("rtsp_stream_url") if isinstance(cam, dict) else None)
 
-                # Prioritize sub-stream for smooth, responsive live grid monitoring
-                stream_url = sub_url or main_url
-                if not stream_url:
-                    continue
+            # Prioritize sub-stream for smooth, responsive live grid monitoring
+            stream_url = sub_url or main_url
+            if not stream_url:
+                continue
 
-                clean_url = clean_rtsp_url(stream_url)
+            clean_url = clean_rtsp_url(stream_url)
 
-                # Standard camera WebRTC stream path
-                lines.append(f"  camera_{cam_id}:")
-                lines.append(f"    source: {clean_url}")
+            # Standard camera WebRTC stream path
+            lines.append(f"  camera_{cam_id}:")
+            lines.append(f"    source: {clean_url}")
+            lines.append("    sourceOnDemand: true")
+            lines.append("    rtspTransport: tcp")
+
+            # Main stream path for HD viewing
+            if main_url:
+                clean_main = clean_rtsp_url(main_url)
+                lines.append(f"  camera_{cam_id}_main:")
+                lines.append(f"    source: {clean_main}")
                 lines.append("    sourceOnDemand: true")
                 lines.append("    rtspTransport: tcp")
 
-                # Main stream path for HD viewing
-                if main_url:
-                    clean_main = clean_rtsp_url(main_url)
-                    lines.append(f"  camera_{cam_id}_main:")
-                    lines.append(f"    source: {clean_main}")
-                    lines.append("    sourceOnDemand: true")
-                    lines.append("    rtspTransport: tcp")
+        # Always include all_others fallback for publisher/test streams
+        lines.append("  all_others:")
+        lines.append("    source: publisher")
 
         return "\n".join(lines) + "\n"
 
     def write_config(self, cameras: List[Any]):
-        """Write cameras configuration to mediamtx.yml."""
+        """Write cameras configuration across standard target locations."""
         content = self.generate_config(cameras)
-        with open(self.config_path, "w", encoding="utf-8") as f:
-            f.write(content)
 
-    def start(self):
-        """Start MediaMTX binary in the background natively."""
-        if not self.exe_path.exists():
-            print(f"[MediaMTX] Executable not found at {self.exe_path}")
+        targets = [self.media_dir / "mediamtx.yml"]
+        if sys.platform != "win32":
+            opt_path = Path("/opt/mediamtx.yml")
+            if opt_path.exists() or Path("/opt").exists():
+                targets.append(opt_path)
+
+        if self.config_path not in targets:
+            targets.append(self.config_path)
+
+        for target in targets:
+            try:
+                # If target is a symlink, write directly to resolve real target
+                with open(target, "w", encoding="utf-8") as f:
+                    f.write(content)
+                print(f"[MediaMTX] Wrote configuration to {target}")
+            except Exception as e:
+                print(f"[MediaMTX] Notice writing config to {target}: {e}")
+
+    def sync_via_api(self, cameras: List[Any]) -> bool:
+        """
+        Dynamically push camera paths into running MediaMTX via its REST API (port 9997).
+        Provides instant zero-restart path registration.
+        """
+        if not self.is_port_in_use(self.api_port):
             return False
 
+        try:
+            import httpx
+            with httpx.Client(timeout=2.0) as client:
+                for cam in cameras:
+                    cam_id = getattr(cam, "id", None) or (cam.get("id") if isinstance(cam, dict) else None)
+                    if not cam_id:
+                        continue
+                    sub_url = getattr(cam, "sub_stream_url", None) or (cam.get("sub_stream_url") if isinstance(cam, dict) else None)
+                    main_url = getattr(cam, "rtsp_stream_url", None) or (cam.get("rtsp_stream_url") if isinstance(cam, dict) else None)
+                    stream_url = sub_url or main_url
+                    if not stream_url:
+                        continue
+
+                    clean_url = clean_rtsp_url(stream_url)
+                    body = {
+                        "source": clean_url,
+                        "sourceOnDemand": True,
+                        "rtspTransport": "tcp"
+                    }
+
+                    # Primary path: camera_{id}
+                    path_name = f"camera_{cam_id}"
+                    r = client.post(f"http://127.0.0.1:{self.api_port}/v3/config/paths/add/{path_name}", json=body)
+                    if r.status_code == 400:
+                        client.patch(f"http://127.0.0.1:{self.api_port}/v3/config/paths/patch/{path_name}", json=body)
+
+                    # Main stream path: camera_{id}_main
+                    if main_url:
+                        clean_main = clean_rtsp_url(main_url)
+                        main_body = {
+                            "source": clean_main,
+                            "sourceOnDemand": True,
+                            "rtspTransport": "tcp"
+                        }
+                        r_main = client.post(f"http://127.0.0.1:{self.api_port}/v3/config/paths/add/{path_name}_main", json=main_body)
+                        if r_main.status_code == 400:
+                            client.patch(f"http://127.0.0.1:{self.api_port}/v3/config/paths/patch/{path_name}_main", json=main_body)
+
+            print(f"[MediaMTX] Successfully injected {len(cameras)} camera paths via REST API.")
+            return True
+        except Exception as e:
+            print(f"[MediaMTX] REST API path sync notice: {e}")
+            return False
+
+    def start(self):
+        """Start MediaMTX binary in the background natively or via systemd."""
         if self.is_running():
             print(f"[MediaMTX] Already running on port {self.webrtc_port}.")
             return True
+
+        if sys.platform != "win32":
+            # On Linux: First attempt systemctl start
+            try:
+                subprocess.run(["systemctl", "start", "mediamtx"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                time.sleep(0.5)
+                if self.is_port_in_use(self.webrtc_port):
+                    print(f"[MediaMTX] Started via systemd service.")
+                    return True
+            except Exception:
+                pass
+
+            # If systemctl not used, check for binary in /opt or local
+            linux_bin = Path("/opt/mediamtx") if Path("/opt/mediamtx").exists() else (self.media_dir / "mediamtx")
+            if linux_bin.exists():
+                try:
+                    log_file = open(self.log_path, "a", encoding="utf-8")
+                    self.process = subprocess.Popen(
+                        [str(linux_bin), str(self.config_path)],
+                        cwd=str(self.media_dir),
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT
+                    )
+                    time.sleep(0.5)
+                    return self.is_running()
+                except Exception as e:
+                    print(f"[MediaMTX] Failed to start Linux binary: {e}")
+                    return False
+            return False
+
+        # Windows
+        if not self.exe_path.exists():
+            print(f"[MediaMTX] Executable not found at {self.exe_path}")
+            return False
 
         try:
             log_file = open(self.log_path, "a", encoding="utf-8")
@@ -157,10 +263,8 @@ class MediaMTXManager:
                 "cwd": str(self.media_dir),
                 "stdout": log_file,
                 "stderr": subprocess.STDOUT,
+                "creationflags": 0x00000008 | 0x00000200
             }
-            if sys.platform == "win32":
-                kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-
             self.process = subprocess.Popen(
                 [str(self.exe_path.resolve()), str(self.config_path.resolve())],
                 **kwargs
@@ -192,7 +296,6 @@ class MediaMTXManager:
                     pass
             self.process = None
 
-        # Clean up any remaining mediamtx processes on Windows
         if sys.platform == "win32":
             try:
                 subprocess.run(
@@ -202,15 +305,30 @@ class MediaMTXManager:
                 )
             except Exception:
                 pass
+        else:
+            try:
+                subprocess.run(["systemctl", "stop", "mediamtx"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            except Exception:
+                pass
 
     def restart(self):
         """Restart MediaMTX to reload updated paths."""
+        if sys.platform != "win32":
+            try:
+                subprocess.run(["systemctl", "restart", "mediamtx"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                time.sleep(0.5)
+                if self.is_port_in_use(self.webrtc_port):
+                    print(f"[MediaMTX] Successfully restarted systemd service.")
+                    return True
+            except Exception:
+                pass
+
         self.stop()
         time.sleep(0.5)
         return self.start()
 
     def sync_from_database(self):
-        """Query all active cameras from DB, update mediamtx.yml, and ensure MediaMTX is running."""
+        """Query all active cameras from DB, update mediamtx.yml, push to REST API, and ensure MediaMTX is running."""
         try:
             try:
                 from backend.database import SessionLocal
@@ -223,9 +341,15 @@ class MediaMTXManager:
             try:
                 cameras = db.query(Camera).all()
                 self.write_config(cameras)
-                print(f"[MediaMTX] Synced {len(cameras)} cameras to {self.config_path.name}")
+                print(f"[MediaMTX] Synced {len(cameras)} cameras to configuration files.")
+
+                # Try dynamic REST API injection first
+                api_synced = self.sync_via_api(cameras)
+
+                # Ensure service is running or reload config
                 if self.is_running():
-                    self.restart()
+                    if not api_synced:
+                        self.restart()
                 else:
                     self.start()
             finally:
