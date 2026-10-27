@@ -116,7 +116,8 @@ function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
         });
 
         if (!res.ok) {
-          throw new Error(`MediaMTX WHEP status ${res.status}`);
+          const errDetail = await res.text().catch(() => '');
+          throw new Error(`MediaMTX WHEP status ${res.status} ${errDetail}`);
         }
 
         // 4. Set remote answer from MediaMTX
