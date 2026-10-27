@@ -323,11 +323,11 @@ def main():
     parser.add_argument("--server", help="Central EPIC Command server URL (e.g. http://192.168.1.101)")
     parser.add_argument("--agent", help="Agent Name (e.g. 'MM Alam' or 'Islamabad Branch')")
     parser.add_argument("--nvr", help="Local NVR IP address (e.g. 200.0.0.25)")
-    parser.add_argument("--user", default="admin", help="NVR Username (default: admin)")
-    parser.add_argument("--password", "--pass", default="admin@mm@store@123", help="NVR Password")
+    parser.add_argument("--user", help="NVR Username (default: admin)")
+    parser.add_argument("--password", "--pass", help="NVR Password")
     parser.add_argument("--bridge-ip", help="Active IP of this machine reachable by Central Server (e.g. 10.254.4.2)")
-    parser.add_argument("--http-port", type=int, default=37725, help="NVR HTTP Port (default: 37725 or 80)")
-    parser.add_argument("--rtsp-port", type=int, default=554, help="NVR RTSP Port (default: 554)")
+    parser.add_argument("--http-port", type=int, default=None, help="NVR HTTP Port (default: 37725 or 80)")
+    parser.add_argument("--rtsp-port", type=int, default=None, help="NVR RTSP Port (default: 554)")
     args = parser.parse_args()
 
     print("=" * 65)
@@ -336,10 +336,17 @@ def main():
     print("=" * 65)
 
     server_url = args.server or input("Enter Central Server URL [http://192.168.1.101]: ").strip() or "http://192.168.1.101"
-    agent_name = args.agent or input("Enter Agent Name [MM Alam]: ").strip() or "MM Alam"
-    nvr_ip = args.nvr or input("Enter NVR IP [200.0.0.25]: ").strip() or "200.0.0.25"
+    agent_name = args.agent or input("Enter Agent / Branch Name [MM Alam]: ").strip() or "MM Alam"
+
+    print(f"\n      Branch Agent   : {agent_name}")
+    print(f"      Central Server : {server_url}")
+    print("-" * 65)
+    print("      LOCAL NVR SETUP (Please enter your local branch NVR details)")
+    print("-" * 65)
+
+    nvr_ip = args.nvr or input("Enter Local NVR IP address [200.0.0.25]: ").strip() or "200.0.0.25"
     username = args.user or input("Enter NVR Username [admin]: ").strip() or "admin"
-    password = args.password if args.password is not None else input("Enter NVR Password: ").strip()
+    password = args.password if args.password is not None else (input("Enter NVR Password [admin@mm@store@123]: ").strip() or "admin@mm@store@123")
     http_port = args.http_port
     rtsp_port = args.rtsp_port
 
@@ -353,7 +360,11 @@ def main():
     except Exception:
         pass
 
-    bridge_ip = args.bridge_ip or (input(f"Enter Local Bridge IP facing Central Server [{detected_bridge}]: ").strip() if not args.server else detected_bridge) or detected_bridge
+    if args.bridge_ip:
+        bridge_ip = args.bridge_ip
+    else:
+        bridge_input = input(f"Enter Local Machine IP facing Central Server [{detected_bridge}]: ").strip()
+        bridge_ip = bridge_input or detected_bridge
 
     # 1. Local Probe
     nvr_info = probe_local_nvr(

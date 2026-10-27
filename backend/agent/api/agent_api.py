@@ -1,5 +1,8 @@
+import re
+from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -147,3 +150,118 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db)):
         print(f"[MediaMTX] Auto-sync after agent delete warning: {e}")
 
     return {"success": True, "message": f"Agent {agent_id} and all associated NVRs deleted successfully."}
+
+
+@router.get("/download/epic-agent.py")
+def download_epic_agent_file():
+    """Serve standalone epic-agent.py directly for easy client-side installation."""
+    possible_paths = [
+        Path(__file__).resolve().parent.parent.parent.parent / "epic-agent.py",
+        Path(__file__).resolve().parent.parent.parent / "epic-agent.py",
+        Path("/opt/epic-command/epic-agent.py"),
+        Path("/opt/epic-command/frontend/public/epic-agent.py")
+    ]
+    for p in possible_paths:
+        if p.exists():
+            return FileResponse(p, media_type="text/x-python", filename="epic-agent.py")
+    raise HTTPException(status_code=404, detail="epic-agent.py not found on server.")
+
+
+@router.get("/{agent_id}/status")
+def get_agent_status(agent_id: int, db: Session = Depends(get_db)):
+    """Check agent deployment status, associated NVRs, and camera count."""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+
+    nvrs = [n.to_dict() for n in agent.nvrs]
+    total_cameras = sum(len(n.get("cameras", [])) for n in nvrs)
+
+    return {
+        "agent_id": agent.id,
+        "name": agent.name,
+        "status": agent.status,
+        "has_nvr": len(nvrs) > 0,
+        "nvr_count": len(nvrs),
+        "total_cameras": total_cameras,
+        "nvrs": nvrs
+    }
+
+
+@router.get("/{agent_id}/launcher.bat")
+def download_agent_launcher(agent_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Generate and serve a customized 1-Click Windows batch launcher (.bat) for this Agent.
+    When executed on any branch PC, it opens CMD, pulls epic-agent.py, prompts for local NVR IP,
+    and registers all camera streams to the central server without VPN or NAT port forwarding.
+    """
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+
+    # Determine external server URL from request headers
+    host_header = request.headers.get("x-forwarded-host") or request.headers.get("host") or "192.168.1.101"
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
+    server_url = f"{proto}://{host_header}".rstrip("/")
+
+    bat_content = f"""@echo off
+title EPIC Command - Edge Surveillance Agent ({agent.name})
+color 0A
+
+echo =================================================================
+echo       EPIC COMMAND - EDGE SURVEILLANCE AGENT LAUNCHER
+echo       Zero-VPN ^| Zero-NAT Port Forwarding ^| True Multi-Branch
+echo =================================================================
+echo.
+echo Branch Agent   : {agent.name}
+echo Central Server : {server_url}
+echo.
+echo [1/3] Checking Python installation on your PC...
+where python >nul 2>nul
+if %errorlevel% neq 0 (
+    echo.
+    echo [!] Python is not installed or not in PATH!
+    echo [*] Opening official Python download...
+    powershell -Command "Start-Process 'https://www.python.org/downloads/'"
+    echo.
+    echo Please install Python (make sure to check 'Add python.exe to PATH')
+    echo and double-click this launcher again!
+    echo.
+    pause
+    exit /b 1
+)
+
+echo [✓] Python is available.
+echo.
+echo [2/3] Downloading latest Edge Agent from Central Server...
+curl -s -O {server_url}/epic-agent.py
+if not exist epic-agent.py (
+    powershell -Command "Invoke-WebRequest -Uri '{server_url}/epic-agent.py' -OutFile 'epic-agent.py'"
+)
+if not exist epic-agent.py (
+    curl -s -O {server_url}/api/agent/download/epic-agent.py
+)
+
+if not exist epic-agent.py (
+    echo.
+    echo [!] Could not download epic-agent.py from {server_url}.
+    echo Please verify that this PC can reach {server_url}.
+    pause
+    exit /b 1
+)
+
+echo [✓] Edge Agent downloaded.
+echo.
+echo [3/3] Launching Edge Agent for Branch '{agent.name}'...
+echo.
+python epic-agent.py --server "{server_url}" --agent "{agent.name}"
+pause
+"""
+    clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', agent.name)
+    filename = f"launch-agent-{clean_name}.bat"
+    return Response(
+        content=bat_content.encode("utf-8"),
+        media_type="application/x-bat",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
