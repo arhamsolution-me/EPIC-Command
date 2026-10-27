@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Role, Permission, RolePermission, User
 from auth.dependencies import get_current_user, require_superadmin, require_permission
-from services.audit_service import log_audit_event
+from services.audit_service import log_audit_event, extract_client_ip
 
 router = APIRouter(prefix="/api/roles", tags=["Roles"])
 
@@ -190,8 +190,51 @@ def update_role(
         resource_type="role",
         resource_id=role.id,
         details={"name": role.name, "is_active": role.is_active},
-        ip_address=request.client.host if request.client else "127.0.0.1"
+        ip_address=extract_client_ip(request)
     )
 
     return {"message": "Role updated successfully", "role": role.to_dict()}
+
+
+@router.delete("/{role_id}")
+def delete_role(
+    role_id: int,
+    request: Request,
+    current_user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db)
+):
+    """Delete a role safely, unassigning any users previously mapped to it."""
+    role = db.query(Role).filter(Role.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+
+    if role.is_system or role.name == "Super Admin":
+        raise HTTPException(status_code=400, detail="Cannot delete system/Super Admin role")
+
+    # Safely detach users mapped to this role
+    assigned_users = db.query(User).filter(User.role_id == role.id).all()
+    assigned_count = len(assigned_users)
+    for u in assigned_users:
+        u.role_id = None
+        u.permission_version += 1
+
+    # Remove associated role_permissions
+    db.query(RolePermission).filter(RolePermission.role_id == role.id).delete()
+
+    role_name = role.name
+    db.delete(role)
+    db.commit()
+
+    log_audit_event(
+        db=db,
+        action="ROLE_DELETE",
+        user=current_user,
+        resource_type="role",
+        resource_id=role_id,
+        details={"name": role_name, "detached_users_count": assigned_count},
+        ip_address=extract_client_ip(request)
+    )
+
+    return {"message": f"Role '{role_name}' deleted successfully", "id": role_id}
+
 

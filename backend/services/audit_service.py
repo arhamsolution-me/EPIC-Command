@@ -4,6 +4,24 @@ from sqlalchemy.orm import Session
 from models import AuditLog, User
 
 
+def extract_client_ip(request: Optional[Any] = None) -> str:
+    """Extract real client IP considering reverse proxy headers."""
+    if not request:
+        return "127.0.0.1"
+    headers = getattr(request, "headers", None)
+    if headers:
+        x_forwarded = headers.get("x-forwarded-for")
+        if x_forwarded:
+            return x_forwarded.split(",")[0].strip()
+        x_real = headers.get("x-real-ip")
+        if x_real:
+            return x_real.strip()
+    client = getattr(request, "client", None)
+    if client and getattr(client, "host", None):
+        return client.host
+    return "127.0.0.1"
+
+
 def log_audit_event(
     db: Session,
     action: str,

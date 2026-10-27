@@ -83,6 +83,31 @@ export default function RoleManagementView() {
     }
   };
 
+  const handleDeleteRole = async (role, e) => {
+    if (e) e.stopPropagation();
+    setOpenActionId(null);
+    if (role.name === 'Super Admin') {
+      alert('Super Admin role cannot be deleted.');
+      return;
+    }
+    const msg = role.total_users > 0
+      ? `Are you sure you want to delete role '${role.name}'? ${role.total_users} user(s) assigned to this role will become unassigned.`
+      : `Are you sure you want to delete role '${role.name}'?`;
+    if (!window.confirm(msg)) return;
+
+    try {
+      const res = await api.delete(`/api/roles/${role.id}`);
+      if (res.ok) {
+        fetchRoles();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.detail || 'Failed to delete role');
+      }
+    } catch (err) {
+      alert(err.message || 'Error deleting role');
+    }
+  };
+
   // Accordion open/close state matching Image 5
   const [openModules, setOpenModules] = useState(
     () => new Set(['Dashboard', 'Live Monitor', 'NVR Management', 'Agent Management', 'User Management', 'Location Management'])
@@ -633,6 +658,18 @@ export default function RoleManagementView() {
                                   <Shield size={13} color="#059669" />
                                   Edit Permissions
                                 </button>
+
+                                {!isSuper && (
+                                  <button
+                                    type="button"
+                                    className="action-menu-item"
+                                    style={{ color: '#ef4444' }}
+                                    onClick={(e) => handleDeleteRole(role, e)}
+                                  >
+                                    <Trash2 size={13} color="#ef4444" />
+                                    Delete Role
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -952,27 +989,30 @@ export default function RoleManagementView() {
       )}
       {/* Edit Role Modal */}
       {isEditRoleModalOpen && editingRole && (
-        <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: '480px', width: '100%' }}>
-            <div className="modal-header">
+        <div className="modal-overlay" onClick={() => setIsEditRoleModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '460px', width: '100%' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Edit2 size={18} color="#2563eb" />
-                <h3 className="modal-title">Edit Role: {editingRole.name}</h3>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
+                  Edit Role: {editingRole.name}
+                </h3>
               </div>
               <button
                 type="button"
-                className="modal-close-btn"
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '4px 8px' }}
                 onClick={() => setIsEditRoleModalOpen(false)}
               >
-                &times;
+                ✕
               </button>
             </div>
 
-            <form onSubmit={handleUpdateRoleSubmit} style={{ padding: '20px' }}>
+            <form onSubmit={handleUpdateRoleSubmit} style={{ padding: '22px' }}>
               {editRoleError && (
                 <div style={{
                   background: '#fef2f2',
-                  border: '1px solid #fecaca',
+                  border: '1px solid #fee2e2',
                   color: '#dc2626',
                   padding: '10px 14px',
                   borderRadius: '6px',
@@ -985,7 +1025,7 @@ export default function RoleManagementView() {
 
               <div className="form-group" style={{ marginBottom: '16px' }}>
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: '6px', display: 'block' }}>
-                  ROLE NAME <span style={{ color: '#ef4444' }}>*</span>
+                  ROLE TITLE <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="text"
@@ -993,13 +1033,13 @@ export default function RoleManagementView() {
                   required
                   value={editRoleForm.name}
                   onChange={(e) => setEditRoleForm({ ...editRoleForm, name: e.target.value })}
-                  placeholder="Enter role name..."
+                  placeholder="Enter role title..."
                 />
               </div>
 
               <div className="form-group" style={{ marginBottom: '16px' }}>
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: '6px', display: 'block' }}>
-                  DESCRIPTION
+                  ROLE DESCRIPTION
                 </label>
                 <textarea
                   className="form-input"
@@ -1007,14 +1047,15 @@ export default function RoleManagementView() {
                   value={editRoleForm.description}
                   onChange={(e) => setEditRoleForm({ ...editRoleForm, description: e.target.value })}
                   placeholder="Briefly describe the role's purpose..."
+                  style={{ resize: 'vertical' }}
                 />
               </div>
 
-              <div className="form-group" style={{ marginBottom: '24px' }}>
+              <div className="form-group" style={{ marginBottom: '22px' }}>
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: '6px', display: 'block' }}>
                   ROLE STATUS
                 </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginTop: '6px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', cursor: 'pointer' }}>
                     <input
                       type="radio"

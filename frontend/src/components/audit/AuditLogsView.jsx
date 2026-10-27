@@ -136,7 +136,7 @@ export default function AuditLogsView() {
                     {log.resource_type ? `${log.resource_type} #${log.resource_id || ''}` : '-'}
                   </td>
                   <td className="font-mono" style={{ fontSize: '0.74rem', color: '#64748b' }}>
-                    {log.ip_address || '127.0.0.1'}
+                    {log.ip_address || '—'}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     {log.details ? (
