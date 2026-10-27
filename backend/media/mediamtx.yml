@@ -1,0 +1,145 @@
+# MediaMTX v1.9.3 Configuration for EPIC Vision (WebRTC & RTSP Stream Engine)
+# Native Windows - Zero Docker Required
+api: true
+apiAddress: :9997
+
+hls: true
+hlsAddress: :8888
+
+webrtc: true
+webrtcAddress: :8889
+webrtcICEServers2: []
+
+rtsp: true
+rtspAddress: :8554
+protocols:
+  - tcp
+
+logLevel: info
+logDestinations:
+  - stdout
+
+readTimeout: 10s
+writeTimeout: 10s
+
+paths:
+  camera_64:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1402
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_64_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1401
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_51:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/102
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_51_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/101
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_52:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/202
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_52_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/201
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_53:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/302
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_53_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/301
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_54:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/402
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_54_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/401
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_55:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/502
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_55_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/501
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_56:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/602
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_56_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/601
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_57:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/702
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_57_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/701
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_58:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/802
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_58_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/801
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_59:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/902
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_59_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/901
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_60:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1002
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_60_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1001
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_61:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1102
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_61_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1101
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_62:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1202
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_62_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1201
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_63:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1302
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_63_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1301
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_65:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1502
+    sourceOnDemand: true
+    rtspTransport: tcp
+  camera_65_main:
+    source: rtsp://admin:Syn%40vos%40456@192.168.1.128:554/Streaming/Channels/1501
+    sourceOnDemand: true
+    rtspTransport: tcp
