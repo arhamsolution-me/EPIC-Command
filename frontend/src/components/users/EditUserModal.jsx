@@ -251,7 +251,7 @@ export default function EditUserModal({ isOpen, onClose, user, onUserUpdated }) 
               <option value="">Select Agent</option>
               {agents.map((ag) => (
                 <option key={ag.id} value={ag.id}>
-                  {ag.name} ({ag.city || 'HQ'})
+                  {ag.name}
                 </option>
               ))}
             </select>
@@ -266,7 +266,7 @@ export default function EditUserModal({ isOpen, onClose, user, onUserUpdated }) 
             marginBottom: '18px'
           }}>
             <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '10px' }}>
-              Location Scoping (Cascading Dependency)
+              Location Scoping
             </span>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }}>
@@ -290,7 +290,7 @@ export default function EditUserModal({ isOpen, onClose, user, onUserUpdated }) 
               </div>
 
               <div>
-                <label style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '4px' }}>City (Requires Province)</label>
+                <label style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '4px' }}>City</label>
                 <select
                   className="form-input"
                   value={city}
@@ -311,7 +311,7 @@ export default function EditUserModal({ isOpen, onClose, user, onUserUpdated }) 
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
-                <label style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Area (Requires City)</label>
+                <label style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Area</label>
                 <select
                   className="form-input"
                   value={area}

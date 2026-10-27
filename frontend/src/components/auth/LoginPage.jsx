@@ -13,7 +13,9 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email.trim() || !password) {
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+    if (!cleanEmail || !cleanPassword) {
       setError('Please enter both email address and password.');
       return;
     }
@@ -22,7 +24,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      await login(email.trim(), password);
+      await login(cleanEmail, cleanPassword);
     } catch (err) {
       setError(err.message || 'Login failed. Please verify credentials.');
     } finally {
@@ -37,10 +39,7 @@ export default function LoginPage() {
       <div className="login-v2-overlay"></div>
 
       {/* Live CCTV Timestamp Overlay in corner */}
-      <div className="cctv-hud-overlay">
-        <span className="cctv-rec-dot"></span>
-        <span>CAM-01 • LIVE SURVEILLANCE • 1080P WHEP</span>
-      </div>
+
 
       <div className="login-v2-content">
         {/* Left Brand Area matching Image 3 */}
@@ -48,7 +47,7 @@ export default function LoginPage() {
           <div className="login-v2-brand-badge">
             <div className="login-v2-shield-icon">
               <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                 <circle cx="12" cy="11" r="3" fill="#059669" stroke="#ffffff" strokeWidth="1.5" />
                 <circle cx="12" cy="11" r="1" fill="#ffffff" />
               </svg>

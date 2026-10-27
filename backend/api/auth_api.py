@@ -41,7 +41,15 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
     ).first()
 
-    if not user or not verify_password(req.password, user.password_hash):
+    raw_pass = req.password or ""
+    clean_pass = raw_pass.strip()
+    is_valid_pass = False
+    if user and user.password_hash:
+        is_valid_pass = verify_password(raw_pass, user.password_hash) or (
+            clean_pass != raw_pass and verify_password(clean_pass, user.password_hash)
+        )
+
+    if not user or not is_valid_pass:
         log_audit_event(
             db=db,
             action="USER_LOGIN_FAILED",

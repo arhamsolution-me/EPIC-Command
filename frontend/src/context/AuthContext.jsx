@@ -106,10 +106,12 @@ export function AuthProvider({ children }) {
   }, [refreshProfile, logout]);
 
   const login = async (emailOrUsername, password) => {
+    const cleanId = (emailOrUsername || '').trim();
+    const cleanPass = (password || '').trim();
     const res = await api.post('/api/auth/login', {
-      email: emailOrUsername.trim(),
-      username: emailOrUsername.trim(),
-      password
+      email: cleanId,
+      username: cleanId,
+      password: cleanPass
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
