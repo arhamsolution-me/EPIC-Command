@@ -105,14 +105,58 @@ export default function EditUserModal({ isOpen, onClose, user, onUserUpdated }) 
   };
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card" style={{ maxWidth: '580px', width: '100%' }}>
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Edit2 size={18} color="#2563eb" />
-            <h3 className="modal-title">Edit User: {user.full_name || user.username}</h3>
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '580px', width: '100%', overflow: 'hidden' }}>
+        <div style={{
+          padding: '16px 22px',
+          borderBottom: '1px solid var(--border-color)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#f8fafc'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              padding: '7px',
+              borderRadius: '7px',
+              display: 'flex'
+            }}>
+              <Edit2 size={18} color="#2563eb" />
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                Edit User
+              </h3>
+              <p style={{ fontSize: '0.76rem', color: '#64748b', margin: '2px 0 0' }}>
+                {user.full_name || user.username} {user.email ? `• ${user.email}` : ''}
+              </p>
+            </div>
           </div>
-          <button type="button" className="modal-close-btn" onClick={onClose} disabled={isSubmitting}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#94a3b8',
+              display: 'flex',
+              padding: '6px',
+              borderRadius: '6px',
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#e2e8f0';
+              e.currentTarget.style.color = '#0f172a';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'none';
+              e.currentTarget.style.color = '#94a3b8';
+            }}
+          >
             <X size={18} />
           </button>
         </div>

@@ -1,4 +1,4 @@
-# MediaMTX v1.9.3 Configuration for EPIC Vision (WebRTC & RTSP Stream Engine)
+# MediaMTX v1.9.3 Configuration for EPIC Command (WebRTC & RTSP Stream Engine)
 # Native Windows - Zero Docker Required
 api: true
 apiAddress: :9997

@@ -19,9 +19,9 @@ from api.audit_api import router as audit_router
 from api.dashboard_api import router as dashboard_router
 
 app = FastAPI(
-    title="EPIC Vision - Central Surveillance & RBAC Management API",
+    title="EPIC Command - Central Surveillance & RBAC Management API",
     version="2.0.0",
-    description="EPIC Vision Backend with Super Admin Dashboard, Dynamic RBAC, Multi-Location Scoping & MediaMTX Engine"
+    description="EPIC Command Backend with Super Admin Dashboard, Dynamic RBAC, Multi-Location Scoping & MediaMTX Engine"
 )
 
 # Enable CORS
@@ -73,7 +73,7 @@ def shutdown_event():
 @app.get("/")
 def root():
     return {
-        "system": "EPIC Vision Surveillance Engine",
+        "system": "EPIC Command Surveillance Engine",
         "version": "2.0.0",
         "status": "running",
         "docs_url": "/docs"

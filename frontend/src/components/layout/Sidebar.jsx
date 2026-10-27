@@ -320,7 +320,7 @@ export default function Sidebar({
           <button
             type="button"
             onClick={() => {
-              if (window.confirm('Are you sure you want to log out of EPIC Vision?')) {
+              if (window.confirm('Are you sure you want to log out of EPIC Command?')) {
                 logout();
               }
             }}

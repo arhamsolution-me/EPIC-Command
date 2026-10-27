@@ -28,7 +28,7 @@ def test_rtsp_describe(ip: str, port: int, path: str, username: str = "", passwo
             s.connect((ip, port))
             url = f"rtsp://{ip}:{port}{path}"
             
-            headers = f"DESCRIBE {url} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: EPIC-Vision-Agent/1.0\r\nAccept: application/sdp\r\n"
+            headers = f"DESCRIBE {url} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: EPIC-Command-Agent/1.0\r\nAccept: application/sdp\r\n"
             if username and password:
                 import base64
                 creds = base64.b64encode(f"{username}:{password}".encode()).decode()

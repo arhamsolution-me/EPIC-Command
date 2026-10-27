@@ -9,7 +9,7 @@ except ImportError:
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres@localhost:5432/epic_vision")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres@localhost:5432/epic_command")
 if "@localhost:" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("@localhost:", "@127.0.0.1:")
 

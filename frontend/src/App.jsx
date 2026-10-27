@@ -188,7 +188,7 @@ function MainApp() {
 
   // Page caching: persist active tab across page refreshes
   const [activeNav, setActiveNav] = useState(() => {
-    return localStorage.getItem('epic_vision_active_nav') || 'dashboard';
+    return localStorage.getItem('epic_command_active_nav') || localStorage.getItem('epic_vision_active_nav') || 'dashboard';
   });
   const [locationSubTab, setLocationSubTab] = useState('provinces');
 
@@ -209,7 +209,7 @@ function MainApp() {
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('epic_vision_active_nav', activeNav);
+    localStorage.setItem('epic_command_active_nav', activeNav);
   }, [activeNav]);
 
   // Dynamic permission boundary: ensure user is redirected if activeNav loses permission
@@ -306,11 +306,11 @@ function MainApp() {
 
   // Live Monitor Grid Mode (persisted in cache)
   const [gridMode, setGridMode] = useState(() => {
-    return localStorage.getItem('epic_vision_grid_mode') || 'grid-2x2';
+    return localStorage.getItem('epic_command_grid_mode') || localStorage.getItem('epic_vision_grid_mode') || 'grid-2x2';
   });
 
   useEffect(() => {
-    localStorage.setItem('epic_vision_grid_mode', gridMode);
+    localStorage.setItem('epic_command_grid_mode', gridMode);
   }, [gridMode]);
 
   // Close actions dropdowns on outside click

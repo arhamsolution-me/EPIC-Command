@@ -1,5 +1,5 @@
 """
-EPIC Vision Media Package
+EPIC Command Media Package
 Contains MediaMTX binary, configuration, and process management.
 """
 

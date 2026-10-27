@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("JWT_SECRET", "epic-vision-secure-jwt-key-2026-super-admin-rbac")
+SECRET_KEY = os.getenv("JWT_SECRET", "epic-command-secure-jwt-key-2026-super-admin-rbac")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24)))  # 24 hours
 

@@ -35,7 +35,7 @@ export default function TopHeader({
 
   const handleLogout = () => {
     setIsDropdownOpen(false);
-    if (window.confirm('Are you sure you want to log out of EPIC Vision?')) {
+    if (window.confirm('Are you sure you want to log out of EPIC Command?')) {
       logout();
     }
   };

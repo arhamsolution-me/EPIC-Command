@@ -73,7 +73,7 @@ class MediaMTXManager:
         Uses low-latency TCP transport and sourceOnDemand.
         """
         lines = [
-            "# MediaMTX v1.9.3 Configuration for EPIC Vision (WebRTC & RTSP Stream Engine)",
+            "# MediaMTX v1.9.3 Configuration for EPIC Command (WebRTC & RTSP Stream Engine)",
             "# Native Windows - Zero Docker Required",
             "api: true",
             f"apiAddress: :{self.api_port}",
