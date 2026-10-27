@@ -60,7 +60,7 @@ def get_dashboard_stats(
     total_roles = db.query(Role).count()
 
     # 7. HISTOGRAM DATASET 1: Agents Breakdown (NVRs, Cameras, Users, PTZ vs Fixed)
-    # Answers: "kis agent pr zayda nvr hain is ka histogram"
+    # Distribution of NVRs and cameras per agent
     agent_histogram = []
     for agent in all_agents:
         agent_nvrs = agent.nvrs or []

@@ -73,26 +73,29 @@ def probe_nvr(
     auth_part = f"{user_enc}:{pass_enc}@" if username else ""
 
     # 1. Check reachability on candidate ports
-    rtsp_candidates = [rtsp_port] if rtsp_port else [554, 8554, 10554]
-    http_candidates = [port] if port else [80, 8000, 37777, 8080, 5000, 8899]
+    user_rtsp = [rtsp_port] if rtsp_port else []
+    user_http = [port] if port else []
 
-    detected_rtsp_port = None
-    for p in rtsp_candidates:
-        if p and check_tcp_port(ip, p, timeout=1.5):
-            detected_rtsp_port = p
-            break
+    rtsp_candidates = user_rtsp + [p for p in [554, 8554, 10554, 5544] if p not in user_rtsp]
+    http_candidates = user_http + [p for p in [80, 8000, 37777, 37725, 8080, 5000, 8899, 443] if p not in user_http]
 
-    detected_http_port = None
-    for p in http_candidates:
-        if p and check_tcp_port(ip, p, timeout=1.5):
-            detected_http_port = p
-            break
+    # Probe open ports with 2.5s timeout for WAN latency tolerance
+    open_rtsp_ports = [p for p in rtsp_candidates if p and check_tcp_port(ip, p, timeout=2.5)]
+    open_http_ports = [p for p in http_candidates if p and check_tcp_port(ip, p, timeout=2.5)]
+
+    detected_rtsp_port = open_rtsp_ports[0] if open_rtsp_ports else None
+    detected_http_port = open_http_ports[0] if open_http_ports else None
+
+    # Dahua TCP port (37777) is often entered as RTSP port by mistake.
+    # If standard RTSP 554 is also open, prioritize 554 for RTSP streaming:
+    if detected_rtsp_port == 37777 and 554 in open_rtsp_ports:
+        detected_rtsp_port = 554
 
     # If neither RTSP nor HTTP/Management ports respond, NVR is not reachable
     if not detected_rtsp_port and not detected_http_port:
         return {
             "reachable": False,
-            "error": f"NVR connect nahi ho pa raha. Host {ip} unreachable hai ya ports closed hain.",
+            "error": f"Failed to connect to NVR. Host {ip} is unreachable or required network ports are closed.",
             "total_channels": 0,
             "cameras": []
         }
@@ -164,8 +167,11 @@ def probe_nvr(
     if not cameras:
         try:
             dahua_url = f"http://{ip}:{detected_http_port}/cgi-bin/configManager.cgi?action=getConfig&name=ChannelTitle"
-            with httpx.Client(timeout=2.5) as client:
+            with httpx.Client(timeout=3.0) as client:
                 resp = client.get(dahua_url, auth=httpx.DigestAuth(username, password))
+                if resp.status_code == 401:
+                    resp = client.get(dahua_url, auth=httpx.BasicAuth(username, password))
+
                 if resp.status_code == 200 and "table.ChannelTitle" in resp.text:
                     vendor = "dahua"
                     matches = re.findall(r"table\.ChannelTitle\[(\d+)\]\.Name=(.*)", resp.text)

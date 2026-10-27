@@ -83,11 +83,11 @@ function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
       try {
         if (!isCancelled) setStreamStatus('connecting');
 
-        // 1. Audio/Video receive karne ke liye direction set karein
+        // 1. Set transceivers to receive audio and video
         pc.addTransceiver('video', { direction: 'recvonly' });
         pc.addTransceiver('audio', { direction: 'recvonly' });
 
-        // 2. Local offer create karein
+        // 2. Create local WebRTC offer
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -107,7 +107,7 @@ function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
 
         if (isCancelled) return;
 
-        // 3. MediaMTX ko offer bhejein (WHEP endpoint)
+        // 3. Send offer to MediaMTX WHEP endpoint
         const whepUrl = `${WEBRTC_STREAM_BASE}/${streamPath}/whep`;
         const res = await fetch(whepUrl, {
           method: 'POST',
@@ -119,7 +119,7 @@ function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
           throw new Error(`MediaMTX WHEP status ${res.status}`);
         }
 
-        // 4. Server ka answer set karein
+        // 4. Set remote answer from MediaMTX
         const answerSdp = await res.text();
         if (isCancelled) return;
 
