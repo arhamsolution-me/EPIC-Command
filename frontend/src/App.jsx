@@ -45,10 +45,9 @@ import DashboardView from './components/dashboard/DashboardView';
 import UserManagementView from './components/users/UserManagementView';
 import RoleManagementView from './components/roles/RoleManagementView';
 import LocationManagementView from './components/locations/LocationManagementView';
-import { apiRequest } from './services/api';
+import { apiRequest, API_BASE_URL, WEBRTC_STREAM_BASE } from './services/api';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-const WEBRTC_STREAM_BASE = import.meta.env.VITE_WEBRTC_URL || 'http://127.0.0.1:8889';
+
 
 /**
  * Native WebRTC (WHEP) Live Camera Player

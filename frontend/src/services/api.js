@@ -1,5 +1,28 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-export const WEBRTC_STREAM_BASE = import.meta.env.VITE_WEBRTC_URL || 'http://127.0.0.1:8889';
+const getApiBaseUrl = () => {
+  const envVal = import.meta.env.VITE_API_BASE_URL;
+  if (envVal !== undefined && envVal !== null && envVal !== '') {
+    return envVal;
+  }
+  // In production builds, use relative URL so all requests route seamlessly through Nginx proxy
+  if (import.meta.env.PROD) {
+    return '';
+  }
+  return 'http://127.0.0.1:8000';
+};
+
+const getWebrtcStreamBase = () => {
+  const envVal = import.meta.env.VITE_WEBRTC_URL;
+  if (envVal !== undefined && envVal !== null && envVal !== '') {
+    return envVal;
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    return `${window.location.protocol}//${window.location.hostname}:8889`;
+  }
+  return 'http://127.0.0.1:8889';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
+export const WEBRTC_STREAM_BASE = getWebrtcStreamBase();
 
 export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('epic_token');
