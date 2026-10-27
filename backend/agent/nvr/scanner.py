@@ -72,24 +72,34 @@ def probe_nvr(
     pass_enc = urllib.parse.quote(password, safe="")
     auth_part = f"{user_enc}:{pass_enc}@" if username else ""
 
-    # 1. Check reachability on candidate ports
-    user_rtsp = [rtsp_port] if rtsp_port else []
-    user_http = [port] if port else []
+    # 1. Fast targeted port probing
+    detected_rtsp_port = None
+    if rtsp_port:
+        if check_tcp_port(ip, rtsp_port, timeout=1.5):
+            detected_rtsp_port = rtsp_port
 
-    rtsp_candidates = user_rtsp + [p for p in [554, 8554, 10554, 5544] if p not in user_rtsp]
-    http_candidates = user_http + [p for p in [80, 8000, 37777, 37725, 8080, 5000, 8899, 443] if p not in user_http]
+    if not detected_rtsp_port:
+        for p in [554, 8554, 10554]:
+            if p != rtsp_port and check_tcp_port(ip, p, timeout=1.0):
+                detected_rtsp_port = p
+                break
 
-    # Probe open ports with 2.5s timeout for WAN latency tolerance
-    open_rtsp_ports = [p for p in rtsp_candidates if p and check_tcp_port(ip, p, timeout=2.5)]
-    open_http_ports = [p for p in http_candidates if p and check_tcp_port(ip, p, timeout=2.5)]
+    detected_http_port = None
+    if port:
+        if check_tcp_port(ip, port, timeout=1.5):
+            detected_http_port = port
 
-    detected_rtsp_port = open_rtsp_ports[0] if open_rtsp_ports else None
-    detected_http_port = open_http_ports[0] if open_http_ports else None
+    if not detected_http_port:
+        for p in [80, 37725, 8000, 37777, 8080]:
+            if p != port and check_tcp_port(ip, p, timeout=1.0):
+                detected_http_port = p
+                break
 
     # Dahua TCP port (37777) is often entered as RTSP port by mistake.
-    # If standard RTSP 554 is also open, prioritize 554 for RTSP streaming:
-    if detected_rtsp_port == 37777 and 554 in open_rtsp_ports:
-        detected_rtsp_port = 554
+    # If port was set to 37777, recheck 554 for RTSP:
+    if detected_rtsp_port == 37777:
+        if check_tcp_port(ip, 554, timeout=1.0):
+            detected_rtsp_port = 554
 
     # If neither RTSP nor HTTP/Management ports respond, NVR is not reachable
     if not detected_rtsp_port and not detected_http_port:

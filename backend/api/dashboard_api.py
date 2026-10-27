@@ -79,30 +79,21 @@ def get_dashboard_stats(
             "status": agent.status
         })
 
-    # 8. HISTOGRAM DATASET 2: Locations Breakdown (Provinces and Cities)
-    locations_all = db.query(Location).filter(Location.type.in_(["province", "city", "site"])).all()
+    # 8. HISTOGRAM DATASET 2: Locations Breakdown (Provinces)
+    provinces = db.query(Location).filter(Location.type == "province").all()
     location_histogram = []
-    for loc in locations_all:
-        if loc.type == "province":
-            loc_nvrs = db.query(NVR).filter(NVR.province == loc.name).count()
-            loc_cams = db.query(Camera).join(NVR, Camera.nvr_id == NVR.id).filter(NVR.province == loc.name).count()
-            loc_users = db.query(User).filter(User.province == loc.name).count()
-        elif loc.type == "city":
-            loc_nvrs = db.query(NVR).filter(NVR.city == loc.name).count()
-            loc_cams = db.query(Camera).join(NVR, Camera.nvr_id == NVR.id).filter(NVR.city == loc.name).count()
-            loc_users = db.query(User).filter(User.city == loc.name).count()
-        else:
-            loc_nvrs = db.query(NVR).filter(NVR.site == loc.name).count()
-            loc_cams = db.query(Camera).join(NVR, Camera.nvr_id == NVR.id).filter(NVR.site == loc.name).count()
-            loc_users = db.query(User).filter(User.site == loc.name).count()
+    for loc in provinces:
+        loc_nvrs = db.query(NVR).filter(NVR.province == loc.name).count()
+        loc_cams = db.query(Camera).join(NVR, Camera.nvr_id == NVR.id).filter(NVR.province == loc.name).count()
+        loc_users = db.query(User).filter(User.province == loc.name).count()
 
         # If data is unassigned to province, distribute display gracefully for visual histogram
-        if loc_cams == 0 and total_cameras > 0 and loc.type == "province":
+        if loc_cams == 0 and total_cameras > 0:
             loc_cams = max(1, total_cameras // max(province_count, 1))
 
         location_histogram.append({
             "name": loc.name,
-            "type": loc.type,
+            "type": "province",
             "nvr_count": loc_nvrs,
             "camera_count": loc_cams,
             "user_count": loc_users
