@@ -68,15 +68,18 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [addError, setAddError] = useState(null);
 
-  // Fetch Master Provinces from Pakistan JSON when modal opens
+  // Fetch Master Provinces from Pakistan JSON
   useEffect(() => {
-    if (isAddModalOpen && masterProvinces.length === 0) {
+    if (masterProvinces.length === 0) {
       api.get('/api/locations/master/provinces')
-        .then((res) => (res.ok ? res.json() : []))
-        .then((data) => setMasterProvinces(Array.isArray(data) ? data : []))
+        .then((res) => (res.ok ? res.json() : {}))
+        .then((data) => {
+          const list = Array.isArray(data?.provinces) ? data.provinces : (Array.isArray(data) ? data : []);
+          setMasterProvinces(list);
+        })
         .catch((err) => console.error('Failed to load master provinces:', err));
     }
-  }, [isAddModalOpen]);
+  }, [masterProvinces.length]);
 
   // Fetch Master Cities when modalProvinceId changes in Cities or Areas tab
   useEffect(() => {
@@ -87,11 +90,14 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
     const prov = (locationsSummary.provinces || []).find((p) => String(p.id) === String(modalProvinceId));
     if (prov) {
       api.get(`/api/locations/master/cities?province=${encodeURIComponent(prov.name)}`)
-        .then((res) => (res.ok ? res.json() : []))
-        .then((data) => setMasterCities(Array.isArray(data) ? data : []))
+        .then((res) => (res.ok ? res.json() : {}))
+        .then((data) => {
+          const list = Array.isArray(data?.cities) ? data.cities : (Array.isArray(data) ? data : []);
+          setMasterCities(list);
+        })
         .catch((err) => console.error('Failed to load master cities:', err));
     }
-  }, [modalProvinceId]);
+  }, [modalProvinceId, locationsSummary.provinces]);
 
   // Fetch Master Areas when modalCityId changes in Areas tab
   useEffect(() => {
@@ -101,13 +107,21 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
     }
     const prov = (locationsSummary.provinces || []).find((p) => String(p.id) === String(modalProvinceId));
     const cty = (locationsSummary.cities || []).find((c) => String(c.id) === String(modalCityId));
-    if (prov && cty) {
-      api.get(`/api/locations/master/areas?province=${encodeURIComponent(prov.name)}&city=${encodeURIComponent(cty.name)}`)
-        .then((res) => (res.ok ? res.json() : []))
-        .then((data) => setMasterAreas(Array.isArray(data) ? data : []))
+    const provQuery = prov ? `province=${encodeURIComponent(prov.name)}&` : '';
+    const cityQuery = cty ? `city=${encodeURIComponent(cty.name)}` : '';
+    if (cty) {
+      api.get(`/api/locations/master/areas?${provQuery}${cityQuery}`)
+        .then((res) => (res.ok ? res.json() : {}))
+        .then((data) => {
+          const list = Array.isArray(data?.areas) ? data.areas : (Array.isArray(data) ? data : []);
+          setMasterAreas(list);
+          if (list.length === 0) {
+            setIsCustomEntry(true);
+          }
+        })
         .catch((err) => console.error('Failed to load master areas:', err));
     }
-  }, [modalCityId, modalProvinceId]);
+  }, [modalCityId, modalProvinceId, locationsSummary.provinces, locationsSummary.cities]);
 
   // Reset modal fields on open/close
   const handleOpenAddModal = () => {
@@ -823,7 +837,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                   <label className="form-label">Province Name *</label>
                   <select
                     className="form-input"
-                    value={masterProvinces.includes(addName) ? addName : (addName ? '__custom__' : '')}
+                    value={isCustomEntry ? '__custom__' : (masterProvinces.includes(addName) ? addName : '')}
                     onChange={(e) => {
                       if (e.target.value === '__custom__') {
                         setIsCustomEntry(true);
@@ -888,7 +902,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                     <select
                       className="form-input"
                       disabled={!modalProvinceId}
-                      value={masterCities.includes(addName) ? addName : (addName ? '__custom__' : '')}
+                      value={isCustomEntry ? '__custom__' : (masterCities.includes(addName) ? addName : '')}
                       onChange={(e) => {
                         if (e.target.value === '__custom__') {
                           setIsCustomEntry(true);
@@ -900,7 +914,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                       }}
                       required
                     >
-                      <option value="">Select City</option>
+                      <option value="">{modalProvinceId ? 'Select City' : 'Select Parent Province First'}</option>
                       {masterCities.map((city) => (
                         <option key={city} value={city}>
                           {city}
@@ -979,7 +993,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                     <select
                       className="form-input"
                       disabled={!modalCityId}
-                      value={masterAreas.includes(addName) ? addName : (addName ? '__custom__' : '')}
+                      value={isCustomEntry ? '__custom__' : (masterAreas.includes(addName) ? addName : '')}
                       onChange={(e) => {
                         if (e.target.value === '__custom__') {
                           setIsCustomEntry(true);
@@ -991,7 +1005,13 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                       }}
                       required
                     >
-                      <option value="">Select Area</option>
+                      <option value="">
+                        {!modalCityId
+                          ? 'Select Parent City First'
+                          : masterAreas.length === 0
+                          ? 'No preset areas in JSON (Click to Enter Custom Area)'
+                          : 'Select Area'}
+                      </option>
                       {masterAreas.map((area) => (
                         <option key={area} value={area}>
                           {area}
