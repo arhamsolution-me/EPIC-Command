@@ -44,6 +44,40 @@ export default function DashboardView({ onNavigate }) {
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [hasDragged, setHasDragged] = useState(false);
+
+  const scrollCards = (direction) => {
+    if (cardsRowRef.current) {
+      const scrollAmount = 360;
+      cardsRowRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const handleMouseDown = (e) => {
+    if (!cardsRowRef.current) return;
+    setIsDragging(true);
+    setStartX(e.pageX - cardsRowRef.current.offsetLeft);
+    setScrollLeft(cardsRowRef.current.scrollLeft);
+    setHasDragged(false);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging || !cardsRowRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - cardsRowRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    if (Math.abs(walk) > 4) {
+      setHasDragged(true);
+    }
+    cardsRowRef.current.scrollLeft = scrollLeft - walk;
+  };
+
+  const handleMouseUpOrLeave = () => {
+    setIsDragging(false);
+  };
 
   const fetchStats = async () => {
     setIsLoading(true);
@@ -67,36 +101,6 @@ export default function DashboardView({ onNavigate }) {
   useEffect(() => {
     fetchStats();
   }, []);
-
-  // Mouse Drag Handlers for Top Cards Row
-  const handleMouseDown = (e) => {
-    if (!cardsRowRef.current) return;
-    setIsDragging(true);
-    setStartX(e.pageX - cardsRowRef.current.offsetLeft);
-    setScrollLeft(cardsRowRef.current.scrollLeft);
-  };
-
-  const handleMouseLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  const handleMouseMove = (e) => {
-    if (!isDragging || !cardsRowRef.current) return;
-    e.preventDefault();
-    const x = e.pageX - cardsRowRef.current.offsetLeft;
-    const walk = (x - startX) * 1.5;
-    cardsRowRef.current.scrollLeft = scrollLeft - walk;
-  };
-
-  const scrollCards = (direction) => {
-    if (!cardsRowRef.current) return;
-    const amount = direction === 'left' ? -280 : 280;
-    cardsRowRef.current.scrollBy({ left: amount, behavior: 'smooth' });
-  };
 
   // 12 METRIC CARDS — with nav destinations
   const topCards = [
@@ -418,7 +422,7 @@ export default function DashboardView({ onNavigate }) {
   return (
     <div className="dashboard-container" style={{ padding: '0 4px', width: '100%', boxSizing: 'border-box' }}>
 
-      {/* RESPONSIVE METRIC CARDS */}
+      {/* HORIZONTAL MOVEABLE METRIC SLIDER */}
       <div style={{ marginBottom: '22px' }}>
         <div style={{
           display: 'flex',
@@ -426,21 +430,98 @@ export default function DashboardView({ onNavigate }) {
           justifyContent: 'space-between',
           marginBottom: '12px'
         }}>
-          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            System Intelligence Overview
-          </span>
-          <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>
-            {visibleCards.length} Modules Active
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              System Intelligence Overview
+            </span>
+            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600, background: '#f1f5f9', padding: '2px 8px', borderRadius: '12px' }}>
+              {visibleCards.length} Modules Active
+            </span>
+          </div>
+
+          {/* Moveable Slider Controls (< and >) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => scrollCards('left')}
+              title="Slide Left"
+              style={{
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.15s ease',
+                color: '#475569'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f8fafc';
+                e.currentTarget.style.borderColor = '#94a3b8';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#ffffff';
+                e.currentTarget.style.borderColor = '#cbd5e1';
+              }}
+            >
+              <ChevronLeft size={18} strokeWidth={2.4} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => scrollCards('right')}
+              title="Slide Right"
+              style={{
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.15s ease',
+                color: '#475569'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f8fafc';
+                e.currentTarget.style.borderColor = '#94a3b8';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#ffffff';
+                e.currentTarget.style.borderColor = '#cbd5e1';
+              }}
+            >
+              <ChevronRight size={18} strokeWidth={2.4} />
+            </button>
+          </div>
         </div>
 
         <div
+          ref={cardsRowRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUpOrLeave}
+          onMouseLeave={handleMouseUpOrLeave}
           style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(auto-fit, minmax(${visibleCards.length <= 5 ? '200px' : '170px'}, 1fr))`,
+            display: 'flex',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            scrollBehavior: isDragging ? 'auto' : 'smooth',
             gap: '14px',
             width: '100%',
-            boxSizing: 'border-box'
+            boxSizing: 'border-box',
+            paddingBottom: '10px',
+            cursor: isDragging ? 'grabbing' : 'grab',
+            userSelect: 'none',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#cbd5e1 transparent'
           }}
         >
           {visibleCards.map((card) => {
@@ -449,11 +530,15 @@ export default function DashboardView({ onNavigate }) {
             return (
               <div
                 key={card.id}
-                onDoubleClick={() => isClickable && onNavigate(card.navTarget)}
+                onDoubleClick={() => {
+                  if (!hasDragged && isClickable) {
+                    onNavigate(card.navTarget);
+                  }
+                }}
                 title={isClickable ? `Double-click to open ${card.label}` : ''}
                 style={{
                   background: '#ffffff',
-                  borderRadius: '10px',
+                  borderRadius: '12px',
                   padding: '16px 18px 14px',
                   border: '1px solid #e2e8f0',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
@@ -463,9 +548,10 @@ export default function DashboardView({ onNavigate }) {
                   gap: '10px',
                   cursor: isClickable ? 'pointer' : 'default',
                   transition: 'transform 0.14s ease, box-shadow 0.14s ease',
-                  minHeight: '125px',
+                  minHeight: '130px',
                   boxSizing: 'border-box',
-                  width: '100%'
+                  flex: '0 0 215px',
+                  width: '215px'
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-3px)';
