@@ -190,10 +190,27 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
     }
 
 
+try:
+    from backend.auth.dependencies import get_current_user
+    from backend.models import User
+except ImportError:
+    from auth.dependencies import get_current_user
+    from models import User
+
+
 @router.get("/list")
-def list_nvrs(db: Session = Depends(get_db)):
-    """List all configured NVRs and their cameras."""
-    nvrs = db.query(NVR).order_by(NVR.id.desc()).all()
+def list_nvrs(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List configured NVRs scoped to current user's assigned agent."""
+    query = db.query(NVR)
+    if not current_user.is_superadmin:
+        if current_user.assigned_agent_id:
+            query = query.filter(NVR.agent_id == current_user.assigned_agent_id)
+        else:
+            query = query.filter(NVR.id == -1)
+    nvrs = query.order_by(NVR.id.desc()).all()
     return {"nvrs": [n.to_dict() for n in nvrs]}
 
 
@@ -232,11 +249,17 @@ def update_nvr(nvr_id: int, req: UpdateNVRRequest, db: Session = Depends(get_db)
 
 
 @router.get("/{nvr_id}")
-def get_nvr(nvr_id: int, db: Session = Depends(get_db)):
-    """Get a specific NVR with all cameras."""
+def get_nvr(
+    nvr_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific NVR with all cameras scoped to user."""
     nvr = db.query(NVR).filter(NVR.id == nvr_id).first()
     if not nvr:
         raise HTTPException(status_code=404, detail="NVR not found.")
+    if not current_user.is_superadmin and current_user.assigned_agent_id != nvr.agent_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this NVR.")
     return nvr.to_dict()
 
 

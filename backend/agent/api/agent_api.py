@@ -48,16 +48,39 @@ def create_agent(req: CreateAgentRequest, db: Session = Depends(get_db)):
     }
 
 
+try:
+    from backend.auth.dependencies import get_current_user
+    from backend.models import User
+except ImportError:
+    from auth.dependencies import get_current_user
+    from models import User
+
+
 @router.get("/list")
-def list_agents(db: Session = Depends(get_db)):
-    """List all registered agents and their linked NVRs & cameras."""
-    agents = db.query(Agent).order_by(Agent.id.desc()).all()
+def list_agents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List registered agents scoped to the logged-in user."""
+    query = db.query(Agent)
+    if not current_user.is_superadmin:
+        if current_user.assigned_agent_id:
+            query = query.filter(Agent.id == current_user.assigned_agent_id)
+        else:
+            query = query.filter(Agent.id == -1)
+    agents = query.order_by(Agent.id.desc()).all()
     return {"agents": [a.to_dict() for a in agents]}
 
 
 @router.get("/{agent_id}")
-def get_agent(agent_id: int, db: Session = Depends(get_db)):
-    """Get single agent details with NVRs."""
+def get_agent(
+    agent_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get single agent details with NVRs scoped to user."""
+    if not current_user.is_superadmin and current_user.assigned_agent_id != agent_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this Agent.")
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found.")

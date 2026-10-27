@@ -418,42 +418,29 @@ export default function DashboardView({ onNavigate }) {
   return (
     <div className="dashboard-container" style={{ padding: '0 4px', width: '100%', boxSizing: 'border-box' }}>
 
-      {/* METRIC CARDS — scrollable, clickable */}
-      <div style={{ marginBottom: '20px', position: 'relative' }}>
+      {/* RESPONSIVE METRIC CARDS */}
+      <div style={{ marginBottom: '22px' }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '10px'
+          marginBottom: '12px'
         }}>
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             System Intelligence Overview
           </span>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button type="button" onClick={() => scrollCards('left')} style={{ width: '24px', height: '24px', borderRadius: '5px', border: '1px solid #cbd5e1', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#475569' }}>
-              <ChevronLeft size={13} />
-            </button>
-            <button type="button" onClick={() => scrollCards('right')} style={{ width: '24px', height: '24px', borderRadius: '5px', border: '1px solid #cbd5e1', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#475569' }}>
-              <ChevronRight size={13} />
-            </button>
-          </div>
+          <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>
+            {visibleCards.length} Modules Active
+          </span>
         </div>
 
         <div
-          ref={cardsRowRef}
-          onMouseDown={handleMouseDown}
-          onMouseLeave={handleMouseLeave}
-          onMouseUp={handleMouseUp}
-          onMouseMove={handleMouseMove}
           style={{
-            display: 'flex',
-            gap: '12px',
-            overflowX: 'auto',
-            scrollBehavior: isDragging ? 'auto' : 'smooth',
-            cursor: isDragging ? 'grabbing' : 'grab',
-            userSelect: 'none',
-            paddingBottom: '4px',
-            scrollbarWidth: 'none'
+            display: 'grid',
+            gridTemplateColumns: `repeat(auto-fit, minmax(${visibleCards.length <= 5 ? '200px' : '170px'}, 1fr))`,
+            gap: '14px',
+            width: '100%',
+            boxSizing: 'border-box'
           }}
         >
           {visibleCards.map((card) => {
@@ -465,18 +452,20 @@ export default function DashboardView({ onNavigate }) {
                 onDoubleClick={() => isClickable && onNavigate(card.navTarget)}
                 title={isClickable ? `Double-click to open ${card.label}` : ''}
                 style={{
-                  flex: '0 0 175px',
-                  minWidth: '175px',
                   background: '#ffffff',
                   borderRadius: '10px',
-                  padding: '16px 16px 14px',
+                  padding: '16px 18px 14px',
                   border: '1px solid #e2e8f0',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                   display: 'flex',
                   flexDirection: 'column',
+                  justifyContent: 'space-between',
                   gap: '10px',
-                  cursor: isClickable ? 'pointer' : 'grab',
-                  transition: 'transform 0.14s ease, box-shadow 0.14s ease'
+                  cursor: isClickable ? 'pointer' : 'default',
+                  transition: 'transform 0.14s ease, box-shadow 0.14s ease',
+                  minHeight: '125px',
+                  boxSizing: 'border-box',
+                  width: '100%'
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-3px)';
@@ -489,33 +478,33 @@ export default function DashboardView({ onNavigate }) {
               >
                 {/* Icon + Label row */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.71rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     {card.label}
                   </span>
                   <div style={{
                     background: card.bgColor,
-                    width: '30px',
-                    height: '30px',
-                    borderRadius: '7px',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0
                   }}>
-                    <IconComponent size={15} color={card.color} strokeWidth={2.2} />
+                    <IconComponent size={16} color={card.color} strokeWidth={2.2} />
                   </div>
                 </div>
 
                 {/* Big number */}
-                <div style={{ fontSize: '2rem', fontWeight: 800, color: card.color, lineHeight: 1 }}>
+                <div style={{ fontSize: '2.1rem', fontWeight: 800, color: card.color, lineHeight: 1 }}>
                   {isLoading ? '—' : card.value}
                 </div>
 
                 {/* Subtext */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.69rem', color: '#94a3b8', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.71rem', color: '#94a3b8', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
                   <span>{card.subtext}</span>
                   {card.isPulse && (
-                    <span className="pulse-dot" style={{ flexShrink: 0, width: '5px', height: '5px' }}></span>
+                    <span className="pulse-dot" style={{ flexShrink: 0, width: '6px', height: '6px' }}></span>
                   )}
                 </div>
               </div>
@@ -524,10 +513,10 @@ export default function DashboardView({ onNavigate }) {
         </div>
       </div>
 
-      {/* ANALYTICS GRAPHS — strict 2 columns */}
+      {/* ANALYTICS GRAPHS — responsive 2 columns on desktop, auto wraps gracefully */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
         gap: '16px',
         marginBottom: '20px'
       }}>

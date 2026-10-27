@@ -102,15 +102,23 @@ def require_permission(perm_key: str):
 
 
 def apply_user_scope(query, user: User, model):
-    """Apply location or agent-based scoping to a query."""
+    """Apply location or agent-based scoping to a query. Users only see their assigned agent & NVRs."""
     if user.is_superadmin:
         return query
 
-    # If scoped to agent
-    if hasattr(model, "agent_id") and user.assigned_agent_id:
-        query = query.filter(model.agent_id == user.assigned_agent_id)
+    # Direct Agent model scoping
+    if getattr(model, "__name__", "") == "Agent":
+        if user.assigned_agent_id:
+            return query.filter(model.id == user.assigned_agent_id)
+        return query.filter(model.id == -1)
 
-    # If model has city / province
+    # Model linked to Agent (NVR)
+    if hasattr(model, "agent_id"):
+        if user.assigned_agent_id:
+            return query.filter(model.agent_id == user.assigned_agent_id)
+        return query.filter(model.id == -1)
+
+    # Fallback location scoping if no agent assigned
     if user.location_scope == "city" and user.city and hasattr(model, "city"):
         query = query.filter(model.city == user.city)
     elif user.location_scope == "province" and user.province and hasattr(model, "province"):

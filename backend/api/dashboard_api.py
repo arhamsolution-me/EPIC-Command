@@ -17,9 +17,7 @@ def get_dashboard_stats(
 ):
     """Retrieve comprehensive surveillance overview metrics and histogram datasets scoped to user."""
     # 1. Agents count
-    agent_query = db.query(Agent)
-    if not current_user.is_superadmin and current_user.assigned_agent_id:
-        agent_query = agent_query.filter(Agent.id == current_user.assigned_agent_id)
+    agent_query = apply_user_scope(db.query(Agent), current_user, Agent)
     total_agents = agent_query.count()
     active_agents = agent_query.filter(Agent.status == "active").count()
     all_agents = agent_query.all()
