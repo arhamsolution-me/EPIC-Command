@@ -7,7 +7,7 @@ from database import get_db
 from models import User
 from auth.security import verify_password, hash_password, create_access_token
 from auth.dependencies import get_current_user
-from services.audit_service import log_audit_event
+from services.audit_service import log_audit_event, extract_client_ip
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -55,7 +55,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
             action="USER_LOGIN_FAILED",
             resource_type="user",
             details={"attempted_identifier": identifier},
-            ip_address=request.client.host if request.client else "127.0.0.1"
+            ip_address=extract_client_ip(request)
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -79,7 +79,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
         resource_type="user",
         resource_id=user.id,
         details={"status": "success"},
-        ip_address=request.client.host if request.client else "127.0.0.1"
+        ip_address=extract_client_ip(request)
     )
 
     return {
@@ -104,7 +104,7 @@ def logout(request: Request, current_user: User = Depends(get_current_user), db:
         user=current_user,
         resource_type="user",
         resource_id=current_user.id,
-        ip_address=request.client.host if request.client else "127.0.0.1"
+        ip_address=extract_client_ip(request)
     )
     return {"message": "Logged out successfully"}
 
