@@ -593,12 +593,13 @@ function MainApp() {
     setExpandedRowId(expandedRowId === nvrId ? null : nvrId);
   };
 
-  // Open / Close Modal (requires agent to exist)
+  // Check if current user has an agent to link NVRs to
+  const isAgentLinked = user?.is_superadmin ? agents.length > 0 : Boolean(user?.assigned_agent_id && agents.length > 0);
+
+  // Open / Close Modal (requires agent to exist and be linked)
   const handleOpenModal = () => {
-    if (agents.length === 0) {
-      alert('Please create an Agent first before adding NVR devices.');
-      setActiveNav('agents');
-      setIsAgentModalOpen(true);
+    if (!isAgentLinked) {
+      alert('You must link with an Agent first before adding NVR devices.');
       return;
     }
     setIsModalOpen(true);
@@ -1784,42 +1785,6 @@ function MainApp() {
 
           {/* TAB 2: NVR TABLE (ROW-WISE WITH DROPDOWN CAMERAS & 3-DOTS ACTION) */}
           <div style={{ display: activeNav === 'nvrs' && hasPermission('NVR_VIEW') ? 'block' : 'none' }}>
-            {/* Agent Required Alert if no agents exist */}
-            {agents.length === 0 && (
-              <div style={{
-                background: '#fffbeb',
-                border: '1px solid #fde68a',
-                borderRadius: 'var(--radius-md)',
-                padding: '16px 20px',
-                marginBottom: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '16px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <AlertTriangle size={20} color="#d97706" />
-                  <div>
-                    <strong style={{ color: '#92400e', fontSize: '0.9rem' }}>Agent Required</strong>
-                    <p style={{ color: '#b45309', fontSize: '0.82rem', margin: '2px 0 0' }}>
-                      An Agent must be created before you can register NVR devices.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={() => {
-                    setActiveNav('agents');
-                    setIsAgentModalOpen(true);
-                  }}
-                >
-                  <Plus size={14} />
-                  + Create Agent First
-                </button>
-              </div>
-            )}
-
             {/* Top Filter Toolbar matching Image 4 */}
             <div className="image-toolbar-card">
               <div className="image-toolbar-filters">
@@ -1939,16 +1904,40 @@ function MainApp() {
                 </select>
               </div>
 
-              {/* Right Action Button: Clean Green "+ Add NVR" with ONLY 1 plus */}
+              {/* Right Action Button: Clean Green "+ Add NVR" OR Red "Link with Agent First" */}
               {hasPermission('NVR_CREATE') && (
-                <button
-                  type="button"
-                  className="image-add-btn"
-                  onClick={handleOpenModal}
-                >
-                  <Plus size={15} />
-                  <span>Add NVR</span>
-                </button>
+                isAgentLinked ? (
+                  <button
+                    type="button"
+                    className="image-add-btn"
+                    onClick={handleOpenModal}
+                  >
+                    <Plus size={15} />
+                    <span>Add NVR</span>
+                  </button>
+                ) : (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '7px 14px',
+                      borderRadius: '6px',
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      color: '#dc2626',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.01em',
+                      cursor: 'default',
+                      boxShadow: '0 1px 2px rgba(220, 38, 38, 0.05)'
+                    }}
+                    title="User must be linked with an Agent first before adding NVR devices"
+                  >
+                    <AlertTriangle size={15} color="#dc2626" />
+                    <span>Link with Agent First</span>
+                  </div>
+                )
               )}
             </div>
 
@@ -1986,14 +1975,35 @@ function MainApp() {
                                 ? 'No NVR devices match your active filter criteria.'
                                 : 'Add your first NVR device to monitor live camera streams across locations.'}
                             </p>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={handleOpenModal}
-                            >
-                              <Plus size={14} />
-                              Add NVR
-                            </button>
+                            {isAgentLinked ? (
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                onClick={handleOpenModal}
+                              >
+                                <Plus size={14} />
+                                Add NVR
+                              </button>
+                            ) : (
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 14px',
+                                  borderRadius: '6px',
+                                  background: '#fef2f2',
+                                  border: '1px solid #fecaca',
+                                  color: '#dc2626',
+                                  fontSize: '0.82rem',
+                                  fontWeight: 600,
+                                  marginTop: '4px'
+                                }}
+                              >
+                                <AlertTriangle size={14} color="#dc2626" />
+                                <span>Link with Agent First</span>
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2435,10 +2445,31 @@ function MainApp() {
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
                     Add an NVR to start live streaming camera feeds.
                   </p>
-                  <button className="btn btn-primary btn-sm" onClick={handleOpenModal}>
-                    <Plus size={14} />
-                    + Add NVR
-                  </button>
+                  {isAgentLinked ? (
+                    <button className="btn btn-primary btn-sm" onClick={handleOpenModal}>
+                      <Plus size={14} />
+                      + Add NVR
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 14px',
+                        borderRadius: '6px',
+                        background: '#fef2f2',
+                        border: '1px solid #fecaca',
+                        color: '#dc2626',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        margin: '0 auto'
+                      }}
+                    >
+                      <AlertTriangle size={14} color="#dc2626" />
+                      <span>Link with Agent First</span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
