@@ -722,10 +722,17 @@ def probe_local_nvr(
                     except Exception:
                         pass
 
+    if not verified_cameras and candidate_cameras and not dahua_auth_failed and not nvr_locked:
+        print(f"      {CYAN}[*]{RESET} NVR configuration contains {len(candidate_cameras)} channels ({vendor}). Registering all {len(candidate_cameras)} channels...")
+        for cam in candidate_cameras:
+            cam_clean = dict(cam)
+            cam_clean.pop("path", None)
+            verified_cameras.append(cam_clean)
+
     verified_cameras.sort(key=lambda c: c["channel_number"])
 
     if verified_cameras:
-        print(f"      {GREEN}[✓]{RESET} Found {len(verified_cameras)} verified live streaming cameras ({vendor}) on NVR!")
+        print(f"      {GREEN}[✓]{RESET} Found {len(verified_cameras)} camera channels ({vendor}) on NVR!")
     else:
         print(f"      {RED}[!] No active live streaming cameras could be verified on NVR at {ip}.{RESET}")
 

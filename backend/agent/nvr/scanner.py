@@ -579,6 +579,12 @@ def probe_nvr(
                     except Exception:
                         pass
 
+    if not verified_cameras and candidate_cameras and not auth_failed and not nvr_locked:
+        for cam in candidate_cameras:
+            cam_clean = dict(cam)
+            cam_clean.pop("path", None)
+            verified_cameras.append(cam_clean)
+
     verified_cameras.sort(key=lambda c: c["channel_number"])
 
     if not verified_cameras:
