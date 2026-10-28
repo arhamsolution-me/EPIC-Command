@@ -169,10 +169,10 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
         db.add(nvr)
         db.flush()
 
-    # Clean up any other obsolete duplicate NVR records for this agent or unreachable 200.0.0.25
+    # Clean up any other obsolete duplicate NVR records for this agent or matching IP / name
     obsolete_nvrs = db.query(NVR).filter(
         NVR.id != nvr.id,
-        (NVR.agent_id == target_agent.id) | (NVR.ip == "200.0.0.25")
+        (NVR.agent_id == target_agent.id) | (NVR.ip == req.ip) | (NVR.ip == "200.0.0.25") | (NVR.name == nvr.name)
     ).all()
     for obs in obsolete_nvrs:
         db.query(Camera).filter(Camera.nvr_id == obs.id).delete()

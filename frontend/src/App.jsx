@@ -686,18 +686,22 @@ function MainApp() {
 
     setIsSaving(true);
     try {
-      const targetAgent = agents.find((a) => String(a.id) === String(selectedAgentId)) || agents[0];
+      const effectiveAgId = (!user?.is_superadmin && user?.assigned_agent_id)
+        ? user.assigned_agent_id
+        : (selectedAgentId ? parseInt(selectedAgentId, 10) : (agents[0]?.id || null));
+
+      const targetAgent = agents.find((a) => String(a.id) === String(effectiveAgId)) || agents[0];
       const cleanVal = (v) => (v && v !== '—' && v !== '-' ? v : '');
       const payload = {
-        agent_id: selectedAgentId ? parseInt(selectedAgentId, 10) : (agents[0]?.id || null),
-        name: nvrName.trim() || 'Synavos',
+        agent_id: effectiveAgId,
+        name: nvrName.trim() || `${targetAgent?.name || 'Branch'} NVR`,
         ip: scanResult.ip,
         port: scanResult.port || 80,
         rtsp_port: scanResult.rtsp_port || 554,
         username: username,
         password: password,
         status: 'online',
-        vendor: 'HIKVISION',
+        vendor: scanResult.vendor || 'DAHUA',
         province: nvrProvince || cleanVal(targetAgent?.province) || '',
         city: nvrCity || cleanVal(targetAgent?.city) || '',
         area: nvrArea || cleanVal(targetAgent?.area) || '',
@@ -705,7 +709,7 @@ function MainApp() {
         cameras: scanResult.cameras || []
       };
 
-      const res = await fetch(`${API_BASE_URL}/api/nvr/confirm`, {
+      const res = await apiRequest('/api/nvr/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

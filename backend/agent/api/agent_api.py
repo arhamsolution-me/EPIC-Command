@@ -25,15 +25,25 @@ class CreateAgentRequest(BaseModel):
 
 @router.post("/create")
 def create_agent(req: CreateAgentRequest, db: Session = Depends(get_db)):
-    """Create a new monitoring agent."""
+    """Create a new monitoring agent (returns existing agent if name matches)."""
     if not req.name or not req.name.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Agent name is required."
         )
 
+    clean_name = req.name.strip()
+    from sqlalchemy import func
+    existing = db.query(Agent).filter(func.lower(Agent.name) == func.lower(clean_name)).first()
+    if existing:
+        return {
+            "success": True,
+            "message": f"Agent '{existing.name}' already exists.",
+            "agent": existing.to_dict()
+        }
+
     agent = Agent(
-        name=req.name.strip(),
+        name=clean_name,
         status=req.status or "active",
         province=None,
         city=None,
