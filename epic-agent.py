@@ -24,6 +24,10 @@ import urllib.parse
 import urllib.request
 import threading
 import argparse
+import hashlib
+import base64
+import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional
 
 
@@ -125,28 +129,168 @@ def get_dynamic_bridge_port(preferred: int = 554) -> int:
         return s.getsockname()[1]
 
 
-def test_rtsp_describe(ip: str, port: int, path: str, username: str = "", password: str = "", timeout: float = 2.5) -> bool:
-    """Direct RTSP DESCRIBE socket test."""
+def verify_rtsp_stream(
+    ip: str,
+    port: int,
+    path: str,
+    username: str = "",
+    password: str = "",
+    timeout: float = 2.0
+) -> bool:
+    """
+    Perform an authenticated RTSP DESCRIBE check with Digest & Basic Auth.
+    Returns True ONLY if server responds 200 OK with valid SDP media track ('m=video').
+    Returns False for empty/unplugged channels (404/454), unauthorized (401), or timeout.
+    """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
             s.connect((ip, port))
-            url = f"rtsp://{ip}:{port}{path}"
-            headers = f"DESCRIBE {url} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: EPIC-Edge-Agent/3.1\r\nAccept: application/sdp\r\n"
-            if username and password:
-                import base64
-                creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-                headers += f"Authorization: Basic {creds}\r\n"
-            headers += "\r\n"
-            s.sendall(headers.encode())
-            data = s.recv(1024).decode("utf-8", errors="ignore")
-            if "RTSP/1.0 200" in data or "m=video" in data or "application/sdp" in data:
-                return True
-            if "RTSP/1.0 401" in data and "nonce=" in data:
-                return True
+
+            cseq = 1
+            rtsp_url = f"rtsp://{ip}:{port}{path}"
+
+            # Step 1: Initial unauthenticated DESCRIBE probe
+            req1 = (
+                f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
+                f"CSeq: {cseq}\r\n"
+                f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
+                f"Accept: application/sdp\r\n\r\n"
+            )
+            s.sendall(req1.encode("utf-8"))
+            data = s.recv(4096).decode("utf-8", errors="ignore")
+
+            # Check if open stream returned 200 OK directly
+            if "RTSP/1.0 200" in data:
+                if "\r\n\r\n" in data:
+                    header_part, _, body_part = data.partition("\r\n\r\n")
+                    cl_m = re.search(r'Content-Length:\s*(\d+)', header_part, re.IGNORECASE)
+                    if cl_m:
+                        cl = int(cl_m.group(1))
+                        while len(body_part.encode("utf-8")) < cl:
+                            chunk = s.recv(2048).decode("utf-8", errors="ignore")
+                            if not chunk:
+                                break
+                            body_part += chunk
+                    data = header_part + "\r\n\r\n" + body_part
+                if "m=video" in data or "application/sdp" in data or "s=" in data:
+                    return True
+
+            # Step 2: Handle 401 Unauthorized challenge
+            if "RTSP/1.0 401" in data and username:
+                cseq += 1
+                digest_match = re.search(r'WWW-Authenticate:\s*Digest\s+([^\r\n]+)', data, re.IGNORECASE)
+                basic_match = re.search(r'WWW-Authenticate:\s*Basic', data, re.IGNORECASE)
+
+                if digest_match:
+                    challenge = digest_match.group(1)
+                    realm_m = re.search(r'realm="?([^",\r\n]+)"?', challenge)
+                    nonce_m = re.search(r'nonce="?([^",\r\n]+)"?', challenge)
+                    qop_m = re.search(r'qop="?([^",\r\n]+)"?', challenge)
+
+                    realm = realm_m.group(1) if realm_m else ""
+                    nonce = nonce_m.group(1) if nonce_m else ""
+                    qop = qop_m.group(1) if qop_m else None
+
+                    ha1 = hashlib.md5(f"{username}:{realm}:{password}".encode("utf-8")).hexdigest()
+
+                    # Attempt A: Digest with full URL
+                    ha2_full = hashlib.md5(f"DESCRIBE:{rtsp_url}".encode("utf-8")).hexdigest()
+                    if qop and "auth" in qop.lower():
+                        cnonce = f"{random.randint(100000, 999999):08x}"
+                        nc = "00000001"
+                        resp_full = hashlib.md5(f"{ha1}:{nonce}:{nc}:{cnonce}:auth:{ha2_full}".encode("utf-8")).hexdigest()
+                        auth_hdr = (
+                            f'Authorization: Digest username="{username}", realm="{realm}", '
+                            f'nonce="{nonce}", uri="{rtsp_url}", response="{resp_full}", '
+                            f'qop=auth, nc={nc}, cnonce="{cnonce}"'
+                        )
+                    else:
+                        resp_full = hashlib.md5(f"{ha1}:{nonce}:{ha2_full}".encode("utf-8")).hexdigest()
+                        auth_hdr = (
+                            f'Authorization: Digest username="{username}", realm="{realm}", '
+                            f'nonce="{nonce}", uri="{rtsp_url}", response="{resp_full}"'
+                        )
+
+                    req2 = (
+                        f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
+                        f"CSeq: {cseq}\r\n"
+                        f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
+                        f"Accept: application/sdp\r\n"
+                        f"{auth_hdr}\r\n\r\n"
+                    )
+                    s.sendall(req2.encode("utf-8"))
+                    data2 = s.recv(4096).decode("utf-8", errors="ignore")
+
+                    if "RTSP/1.0 200" in data2:
+                        if "\r\n\r\n" in data2:
+                            header_part, _, body_part = data2.partition("\r\n\r\n")
+                            cl_m = re.search(r'Content-Length:\s*(\d+)', header_part, re.IGNORECASE)
+                            if cl_m:
+                                cl = int(cl_m.group(1))
+                                while len(body_part.encode("utf-8")) < cl:
+                                    chunk = s.recv(2048).decode("utf-8", errors="ignore")
+                                    if not chunk:
+                                        break
+                                    body_part += chunk
+                            data2 = header_part + "\r\n\r\n" + body_part
+                        if "m=video" in data2 or "application/sdp" in data2 or "s=" in data2:
+                            return True
+
+                    # Attempt B: Digest with relative path URI (Dahua & Hikvision fallback)
+                    if "RTSP/1.0 401" in data2:
+                        cseq += 1
+                        ha2_rel = hashlib.md5(f"DESCRIBE:{path}".encode("utf-8")).hexdigest()
+                        if qop and "auth" in qop.lower():
+                            resp_rel = hashlib.md5(f"{ha1}:{nonce}:{nc}:{cnonce}:auth:{ha2_rel}".encode("utf-8")).hexdigest()
+                            auth_hdr_rel = (
+                                f'Authorization: Digest username="{username}", realm="{realm}", '
+                                f'nonce="{nonce}", uri="{path}", response="{resp_rel}", '
+                                f'qop=auth, nc={nc}, cnonce="{cnonce}"'
+                            )
+                        else:
+                            resp_rel = hashlib.md5(f"{ha1}:{nonce}:{ha2_rel}".encode("utf-8")).hexdigest()
+                            auth_hdr_rel = (
+                                f'Authorization: Digest username="{username}", realm="{realm}", '
+                                f'nonce="{nonce}", uri="{path}", response="{resp_rel}"'
+                            )
+                        req3 = (
+                            f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
+                            f"CSeq: {cseq}\r\n"
+                            f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
+                            f"Accept: application/sdp\r\n"
+                            f"{auth_hdr_rel}\r\n\r\n"
+                        )
+                        s.sendall(req3.encode("utf-8"))
+                        data3 = s.recv(4096).decode("utf-8", errors="ignore")
+                        if "RTSP/1.0 200" in data3:
+                            if "m=video" in data3 or "application/sdp" in data3 or "s=" in data3:
+                                return True
+
+                elif basic_match or "Basic" in data:
+                    creds = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+                    auth_hdr = f"Authorization: Basic {creds}"
+                    req2 = (
+                        f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
+                        f"CSeq: {cseq}\r\n"
+                        f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
+                        f"Accept: application/sdp\r\n"
+                        f"{auth_hdr}\r\n\r\n"
+                    )
+                    s.sendall(req2.encode("utf-8"))
+                    data2 = s.recv(4096).decode("utf-8", errors="ignore")
+                    if "RTSP/1.0 200" in data2:
+                        if "m=video" in data2 or "application/sdp" in data2 or "s=" in data2:
+                            return True
+
             return False
     except Exception:
         return False
+
+
+def test_rtsp_describe(ip: str, port: int, path: str, username: str = "", password: str = "", timeout: float = 2.0) -> bool:
+    """Backwards-compatible alias for verify_rtsp_stream."""
+    return verify_rtsp_stream(ip, port, path, username, password, timeout)
 
 
 def probe_local_nvr(
@@ -154,13 +298,14 @@ def probe_local_nvr(
     username: str,
     password: str,
     port: Optional[int] = None,
-    rtsp_port: Optional[int] = None,
-    max_channels: int = 32
+    rtsp_port: Optional[int] = None
 ) -> Dict[str, Any]:
-    """Discover cameras locally from this machine with dynamic porting."""
+    """
+    Discover active cameras locally from this machine.
+    Removes artificial channel limits and strictly filters out channels with no live stream.
+    """
     print(f"\n{BOLD}[1/3] Probing NVR at {ip} locally from this network...{RESET}")
 
-    # Safely URL-encode credentials so passwords with special chars (@, $, #, :) work seamlessly
     user_enc = urllib.parse.quote(username, safe="")
     pass_enc = urllib.parse.quote(password, safe="")
     auth_part = f"{user_enc}:{pass_enc}@" if username else ""
@@ -172,7 +317,6 @@ def probe_local_nvr(
     http_ok = check_tcp_port(ip, detected_http_port, timeout=2.0)
     rtsp_ok = check_tcp_port(ip, detected_rtsp_port, timeout=2.0)
 
-    # If HTTP port wasn't manually specified and port 80 is closed, try 37725 / 8000 / 8080
     if not port and not http_ok:
         for p in [37725, 8000, 8080]:
             if check_tcp_port(ip, p, timeout=1.0):
@@ -180,7 +324,6 @@ def probe_local_nvr(
                 http_ok = True
                 break
 
-    # If RTSP port wasn't manually specified and port 554 is closed, try 8554 / 10554
     if not rtsp_port and not rtsp_ok:
         for p in [8554, 10554]:
             if check_tcp_port(ip, p, timeout=1.0):
@@ -191,10 +334,10 @@ def probe_local_nvr(
     print(f"      Target HTTP Port : {detected_http_port} (Status: {'OPEN' if http_ok else 'CLOSED'})")
     print(f"      Target RTSP Port : {detected_rtsp_port} (Status: {'OPEN' if rtsp_ok else 'CLOSED'})")
 
-    cameras: List[Dict[str, Any]] = []
+    candidate_cameras: List[Dict[str, Any]] = []
     vendor = "DAHUA"
 
-    # Dahua Channel Discovery via CGI (supports both Digest and Basic auth)
+    # Dahua Channel Discovery via CGI (Extract all channels without artificial limit)
     try:
         dahua_url = f"http://{ip}:{detected_http_port}/cgi-bin/configManager.cgi?action=getConfig&name=ChannelTitle"
         passman = urllib.request.HTTPPasswordMgrWithDefaultRealm()
@@ -202,7 +345,7 @@ def probe_local_nvr(
         authhandler = urllib.request.HTTPDigestAuthHandler(passman)
         basichandler = urllib.request.HTTPBasicAuthHandler(passman)
         opener = urllib.request.build_opener(authhandler, basichandler)
-        req = urllib.request.Request(dahua_url, headers={"User-Agent": "EPIC-Edge-Agent/3.1"})
+        req = urllib.request.Request(dahua_url, headers={"User-Agent": "EPIC-Edge-Agent/3.2"})
         with opener.open(req, timeout=4.0) as resp:
             content = resp.read().decode("utf-8", errors="ignore")
             if "table.ChannelTitle" in content:
@@ -212,9 +355,10 @@ def probe_local_nvr(
                     ch_num = int(idx) + 1
                     main_url = f"rtsp://{auth_part}{ip}:{detected_rtsp_port}/cam/realmonitor?channel={ch_num}&subtype=0"
                     sub_url = f"rtsp://{auth_part}{ip}:{detected_rtsp_port}/cam/realmonitor?channel={ch_num}&subtype=1"
-                    cameras.append({
+                    candidate_cameras.append({
                         "channel_number": ch_num,
                         "name": name.strip() or f"Camera {ch_num}",
+                        "path": f"/cam/realmonitor?channel={ch_num}&subtype=0",
                         "rtsp_stream_url": main_url,
                         "sub_stream_url": sub_url,
                         "status": "reachable",
@@ -223,57 +367,148 @@ def probe_local_nvr(
     except Exception:
         pass
 
-    # RTSP Probe Fallback if CGI doesn't return
-    if not cameras:
+    # Hikvision ISAPI Discovery fallback
+    if not candidate_cameras:
+        try:
+            hik_url = f"http://{ip}:{detected_http_port}/ISAPI/Streaming/channels"
+            passman = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+            passman.add_password(None, hik_url, username, password)
+            authhandler = urllib.request.HTTPDigestAuthHandler(passman)
+            basichandler = urllib.request.HTTPBasicAuthHandler(passman)
+            opener = urllib.request.build_opener(authhandler, basichandler)
+            req = urllib.request.Request(hik_url, headers={"User-Agent": "EPIC-Edge-Agent/3.2"})
+            with opener.open(req, timeout=4.0) as resp:
+                content = resp.read().decode("utf-8", errors="ignore")
+                if "StreamingChannel" in content:
+                    vendor = "HIKVISION"
+                    matches = re.findall(r"<id>(\d+)</id>", content)
+                    seen_ch = set()
+                    for ch_id in matches:
+                        raw_id = int(ch_id)
+                        ch_num = raw_id // 100 if raw_id >= 100 else raw_id
+                        if ch_num not in seen_ch and ch_num > 0:
+                            seen_ch.add(ch_num)
+                            main_url = f"rtsp://{auth_part}{ip}:{detected_rtsp_port}/Streaming/Channels/{ch_num}01"
+                            sub_url = f"rtsp://{auth_part}{ip}:{detected_rtsp_port}/Streaming/Channels/{ch_num}02"
+                            candidate_cameras.append({
+                                "channel_number": ch_num,
+                                "name": f"Camera {ch_num}",
+                                "path": f"/Streaming/Channels/{ch_num}01",
+                                "rtsp_stream_url": main_url,
+                                "sub_stream_url": sub_url,
+                                "status": "reachable",
+                                "is_ptz": False
+                            })
+        except Exception:
+            pass
+
+    # Dynamic RTSP Pattern Probing (NO artificial max limit, scales in parallel batches up to 256)
+    if not candidate_cameras:
         patterns = [
             ("/cam/realmonitor?channel={ch}&subtype=0", "/cam/realmonitor?channel={ch}&subtype=1", "DAHUA"),
             ("/Streaming/Channels/{ch}01", "/Streaming/Channels/{ch}02", "HIKVISION"),
             ("/ch{ch}/main", "/ch{ch}/sub", "GENERIC"),
+            ("/h264/ch{ch}/main/av_stream", "/h264/ch{ch}/sub/av_stream", "GENERIC"),
         ]
         active_pattern = None
         for m_pat, s_pat, vname in patterns:
-            if test_rtsp_describe(ip, detected_rtsp_port, m_pat.format(ch=1), username, password):
-                active_pattern = (m_pat, s_pat, vname)
-                vendor = vname
+            for test_ch in [1, 2]:
+                if verify_rtsp_stream(ip, detected_rtsp_port, m_pat.format(ch=test_ch), username, password, timeout=1.8):
+                    active_pattern = (m_pat, s_pat, vname)
+                    vendor = vname
+                    break
+            if active_pattern:
                 break
 
         if active_pattern:
             m_pat, s_pat, _ = active_pattern
-            for ch in range(1, max_channels + 1):
-                p_main = m_pat.format(ch=ch)
-                p_sub = s_pat.format(ch=ch)
-                if test_rtsp_describe(ip, detected_rtsp_port, p_main, username, password, timeout=1.5):
-                    cameras.append({
+            batch_size = 16
+            for start_ch in range(1, 257, batch_size):
+                end_ch = start_ch + batch_size
+                batch_live = []
+                with ThreadPoolExecutor(max_workers=batch_size) as executor:
+                    futures = {
+                        executor.submit(
+                            verify_rtsp_stream,
+                            ip,
+                            detected_rtsp_port,
+                            m_pat.format(ch=ch),
+                            username,
+                            password,
+                            1.8
+                        ): ch
+                        for ch in range(start_ch, end_ch)
+                    }
+                    for fut in as_completed(futures):
+                        ch = futures[fut]
+                        try:
+                            if fut.result():
+                                batch_live.append(ch)
+                        except Exception:
+                            pass
+
+                for ch in sorted(batch_live):
+                    candidate_cameras.append({
                         "channel_number": ch,
                         "name": f"Camera {ch}",
-                        "rtsp_stream_url": f"rtsp://{auth_part}{ip}:{detected_rtsp_port}{p_main}",
-                        "sub_stream_url": f"rtsp://{auth_part}{ip}:{detected_rtsp_port}{p_sub}",
+                        "path": m_pat.format(ch=ch),
+                        "rtsp_stream_url": f"rtsp://{auth_part}{ip}:{detected_rtsp_port}{m_pat.format(ch=ch)}",
+                        "sub_stream_url": f"rtsp://{auth_part}{ip}:{detected_rtsp_port}{s_pat.format(ch=ch)}",
                         "status": "reachable",
                         "is_ptz": False
                     })
-                elif len(cameras) >= 1:
-                    break
 
-    # If fallback needed
-    if not cameras:
-        for ch in range(1, 9):
-            cameras.append({
-                "channel_number": ch,
-                "name": f"Camera {ch}",
-                "rtsp_stream_url": f"rtsp://{auth_part}{ip}:{detected_rtsp_port}/cam/realmonitor?channel={ch}&subtype=0",
-                "sub_stream_url": f"rtsp://{auth_part}{ip}:{detected_rtsp_port}/cam/realmonitor?channel={ch}&subtype=1",
-                "status": "reachable",
-                "is_ptz": False
-            })
+                if not batch_live:
+                    if candidate_cameras or start_ch > 16:
+                        break
 
-    print(f"      {GREEN}[✓]{RESET} Found {len(cameras)} cameras ({vendor}) on NVR!")
+    # STRICT SIGNAL VALIDATION: Test every candidate stream signal in parallel
+    print(f"      Validating camera stream signals for {len(candidate_cameras)} channels in parallel...")
+    verified_cameras: List[Dict[str, Any]] = []
+
+    if candidate_cameras:
+        with ThreadPoolExecutor(max_workers=min(16, len(candidate_cameras))) as executor:
+            future_to_cam = {
+                executor.submit(
+                    verify_rtsp_stream,
+                    ip,
+                    detected_rtsp_port,
+                    cam["path"],
+                    username,
+                    password,
+                    2.0
+                ): cam
+                for cam in candidate_cameras
+            }
+            for future in as_completed(future_to_cam):
+                cam = future_to_cam[future]
+                try:
+                    is_live = future.result()
+                except Exception:
+                    is_live = False
+
+                if is_live:
+                    cam_clean = dict(cam)
+                    cam_clean.pop("path", None)
+                    verified_cameras.append(cam_clean)
+                    print(f"      {GREEN}[✓]{RESET} Channel {cam['channel_number']} ({cam['name']}): Stream Active (200 OK)")
+                else:
+                    print(f"      {YELLOW}[-]{RESET} Channel {cam['channel_number']} ({cam['name']}): No Video Signal (Skipped)")
+
+    verified_cameras.sort(key=lambda c: c["channel_number"])
+
+    if verified_cameras:
+        print(f"      {GREEN}[✓]{RESET} Found {len(verified_cameras)} verified live streaming cameras ({vendor}) on NVR!")
+    else:
+        print(f"      {RED}[!] No active live streaming cameras could be verified on NVR at {ip}.{RESET}")
+
     return {
-        "reachable": True,
+        "reachable": len(verified_cameras) > 0,
         "ip": ip,
         "port": detected_http_port,
         "rtsp_port": detected_rtsp_port,
         "vendor": vendor,
-        "cameras": cameras
+        "cameras": verified_cameras
     }
 
 
@@ -484,6 +719,11 @@ def main():
         port=http_port,
         rtsp_port=rtsp_port
     )
+
+    if not nvr_info.get("cameras"):
+        print(f"\n{RED}[!] Registration aborted: 0 live streaming cameras were verified on NVR at {nvr_ip}.{RESET}")
+        print(f"      Please check camera physical connections, NVR power, IP, and credentials.")
+        return
 
     actual_rtsp_port = nvr_info.get("rtsp_port") or rtsp_port or 554
 
