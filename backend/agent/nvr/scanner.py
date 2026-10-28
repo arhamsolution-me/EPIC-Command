@@ -303,13 +303,13 @@ def probe_nvr(
     detected_http_port: Optional[int] = None
     detected_rtsp_port: Optional[int] = None
 
-    # 1. User-Specified Ports: Verify and test directly
+    # 1. User-Specified Ports: Verify protocol directly
     if port:
         if check_tcp_port(ip, port, timeout=1.5):
             proto = probe_port_protocol(ip, port)
             if proto == "RTSP" and not rtsp_port:
                 detected_rtsp_port = port
-            else:
+            elif proto == "HTTP":
                 detected_http_port = port
 
     if rtsp_port:
@@ -317,7 +317,7 @@ def probe_nvr(
             proto = probe_port_protocol(ip, rtsp_port)
             if proto == "HTTP" and not detected_http_port:
                 detected_http_port = rtsp_port
-            else:
+            elif proto == "RTSP":
                 detected_rtsp_port = rtsp_port
 
     # 2. Dynamic Discovery: If either port is still not resolved, scan target host dynamically

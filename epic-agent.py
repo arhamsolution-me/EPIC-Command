@@ -422,16 +422,18 @@ def probe_local_nvr(
     detected_http_port: Optional[int] = None
     detected_rtsp_port: Optional[int] = None
 
-    # 1. User-Specified Ports: Verify and test directly
+    # 1. User-Specified Ports: Verify protocol directly
     if port:
         if check_tcp_port(ip, port, timeout=1.5):
             proto = probe_port_protocol(ip, port)
             if proto == "RTSP" and not rtsp_port:
                 detected_rtsp_port = port
                 print(f"      {GREEN}[✓]{RESET} Port {port} dynamically identified as RTSP Stream Service.")
-            else:
+            elif proto == "HTTP":
                 detected_http_port = port
-                print(f"      {GREEN}[✓]{RESET} User HTTP Port {port} verified (Status: OPEN, Protocol: {proto})")
+                print(f"      {GREEN}[✓]{RESET} User HTTP Port {port} verified (Status: OPEN, Protocol: HTTP)")
+            else:
+                print(f"      {YELLOW}[!]{RESET} User Port {port} is open, but protocol is {proto} (not HTTP Web). Scanning dynamically for true HTTP port...")
         else:
             print(f"      {YELLOW}[!]{RESET} User specified HTTP Port {port} is CLOSED on {ip}.")
 
@@ -441,9 +443,11 @@ def probe_local_nvr(
             if proto == "HTTP" and not detected_http_port:
                 detected_http_port = rtsp_port
                 print(f"      {GREEN}[✓]{RESET} Port {rtsp_port} dynamically identified as HTTP Web Service.")
-            else:
+            elif proto == "RTSP":
                 detected_rtsp_port = rtsp_port
-                print(f"      {GREEN}[✓]{RESET} User RTSP Port {rtsp_port} verified (Status: OPEN, Protocol: {proto})")
+                print(f"      {GREEN}[✓]{RESET} User RTSP Port {rtsp_port} verified (Status: OPEN, Protocol: RTSP)")
+            else:
+                print(f"      {YELLOW}[!]{RESET} User Port {rtsp_port} is open, but protocol is {proto} (not RTSP Stream). Scanning dynamically for true RTSP port...")
         else:
             print(f"      {YELLOW}[!]{RESET} User specified RTSP Port {rtsp_port} is CLOSED on {ip}.")
 
