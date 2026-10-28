@@ -269,12 +269,13 @@ if %errorlevel% neq 0 (
 echo [✓] Python runtime detected (%PYCMD%).
 echo.
 echo [2/3] Downloading latest Edge Agent from Central Server...
-curl -s -O {server_url}/epic-agent.py
+if exist epic-agent.py del /f /q epic-agent.py
+curl -s -f -O {server_url}/api/agent/download/epic-agent.py
 if not exist epic-agent.py (
-    powershell -Command "Invoke-WebRequest -Uri '{server_url}/epic-agent.py' -OutFile 'epic-agent.py'"
+    curl -s -f -O {server_url}/epic-agent.py
 )
 if not exist epic-agent.py (
-    curl -s -O {server_url}/api/agent/download/epic-agent.py
+    powershell -Command "try { (New-Object Net.WebClient).DownloadFile('{server_url}/api/agent/download/epic-agent.py', 'epic-agent.py') } catch { (New-Object Net.WebClient).DownloadFile('{server_url}/epic-agent.py', 'epic-agent.py') }"
 )
 
 if not exist epic-agent.py (
@@ -291,6 +292,10 @@ echo.
 echo [3/3] Launching Edge Agent for Branch '{agent.name}'...
 echo.
 %PYCMD% epic-agent.py --server "{server_url}" --agent "{agent.name}" --agent-id {agent.id}
+if errorlevel 1 (
+    echo.
+    echo [!] Edge Agent exited with error code %ERRORLEVEL%.
+)
 echo.
 echo =================================================================
 echo Edge Agent has exited.
@@ -346,9 +351,11 @@ fi
 
 echo "[✓] Python runtime detected ($PYCMD)."
 echo ""
+echo ""
 echo "[2/3] Downloading latest Edge Agent from Central Server..."
-curl -s -O {server_url}/epic-agent.py || wget -q -O epic-agent.py {server_url}/epic-agent.py
-if [ ! -f "epic-agent.py" ]; then
+rm -f epic-agent.py
+curl -s -f -O {server_url}/api/agent/download/epic-agent.py || curl -s -f -O {server_url}/epic-agent.py || wget -q -O epic-agent.py {server_url}/api/agent/download/epic-agent.py || wget -q -O epic-agent.py {server_url}/epic-agent.py
+if [ ! -s "epic-agent.py" ]; then
     echo "[!] Could not download epic-agent.py from {server_url}."
     echo ""
     read -p "Press Enter to exit..."

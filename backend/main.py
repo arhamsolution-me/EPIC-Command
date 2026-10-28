@@ -114,6 +114,24 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/epic-agent.py")
+def get_root_epic_agent():
+    """Serve epic-agent.py directly from root URL for 1-Click Launchers."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse, HTTPException
+    possible_paths = [
+        Path(__file__).resolve().parent.parent / "epic-agent.py",
+        Path(__file__).resolve().parent / "epic-agent.py",
+        Path("/opt/epic-command/epic-agent.py"),
+        Path("/opt/epic-command/frontend/public/epic-agent.py"),
+        Path("/opt/epic-command/frontend/dist/epic-agent.py"),
+    ]
+    for p in possible_paths:
+        if p.exists() and p.is_file():
+            return FileResponse(p, media_type="text/x-python", filename="epic-agent.py")
+    raise HTTPException(status_code=404, detail="epic-agent.py not found on server.")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
