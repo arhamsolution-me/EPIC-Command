@@ -301,23 +301,18 @@ def register_with_central_server(
     bridge_ip: str,
     bridge_port: int,
     username: str = "admin",
-    password: str = ""
+    password: str = "",
+    agent_id: Optional[int] = None
 ) -> bool:
     """Register Agent, NVR, and cameras with Central EPIC Command backend with dynamic credentials."""
     server_url = server_url.rstrip("/")
     print(f"\n{BOLD}[2/3] Registering with Central Server at {server_url} (Bridge IP: {bridge_ip}:{bridge_port})...{RESET}")
 
-    # Step A: Enroll Agent
-    enroll_url = f"{server_url}/api/agent/create"
-    agent_id = None
-    try:
-        data = json.dumps({"name": agent_name, "status": "active"}).encode("utf-8")
-        req = urllib.request.Request(enroll_url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
-            res_data = json.loads(resp.read().decode())
-            agent_id = res_data.get("agent", {}).get("id")
-            print(f"      {GREEN}[✓]{RESET} Agent '{agent_name}' registered (ID: {agent_id})")
-    except Exception:
+    # Step A: Link Agent (never create duplicates if agent exists or agent_id is provided)
+    if agent_id:
+        print(f"      {GREEN}[✓]{RESET} Linked directly to assigned Agent '{agent_name}' (ID: {agent_id})")
+    else:
+        # Check /api/agent/list first
         try:
             list_url = f"{server_url}/api/agent/list"
             req = urllib.request.Request(list_url)
@@ -330,6 +325,19 @@ def register_with_central_server(
                         break
         except Exception:
             pass
+
+        # Only create if not found in list
+        if not agent_id:
+            try:
+                enroll_url = f"{server_url}/api/agent/create"
+                data = json.dumps({"name": agent_name, "status": "active"}).encode("utf-8")
+                req = urllib.request.Request(enroll_url, data=data, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=5.0) as resp:
+                    res_data = json.loads(resp.read().decode())
+                    agent_id = res_data.get("agent", {}).get("id")
+                    print(f"      {GREEN}[✓]{RESET} Agent '{agent_name}' registered (ID: {agent_id})")
+            except Exception:
+                pass
 
     # Remap camera RTSP URLs to use the Bridge IP and dynamic bridge port
     bridged_cameras = []
@@ -432,6 +440,7 @@ def main():
     parser.add_argument("--bridge-ip", help="Active IP of this machine reachable by Central Server")
     parser.add_argument("--http-port", type=int, default=None, help="NVR HTTP Port")
     parser.add_argument("--rtsp-port", type=int, default=None, help="NVR RTSP Port")
+    parser.add_argument("--agent-id", type=int, default=None, help="Assigned Agent ID")
     args = parser.parse_args()
 
     print()
@@ -485,7 +494,7 @@ def main():
 
     print(f"      Active Edge Bridge IP : {bridge_ip}:{bridge_port}")
 
-    # 2. Register with Central Server with exact user credentials
+    # 2. Register with Central Server with exact user credentials and assigned agent ID
     register_with_central_server(
         server_url=server_url,
         agent_name=agent_name,
@@ -493,7 +502,8 @@ def main():
         bridge_ip=bridge_ip,
         bridge_port=bridge_port,
         username=username,
-        password=password
+        password=password,
+        agent_id=args.agent_id
     )
 
     # 3. Start Dynamic Stream Bridge

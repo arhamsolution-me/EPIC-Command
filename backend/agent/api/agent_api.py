@@ -74,7 +74,26 @@ def list_agents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List registered agents scoped to the logged-in user."""
+    """List registered agents scoped to the logged-in user, auto-merging any duplicates."""
+    # Auto-merge duplicates on the fly
+    try:
+        from sqlalchemy import func
+        all_raw_agents = db.query(Agent).order_by(Agent.id.asc()).all()
+        seen = {}
+        for ag in all_raw_agents:
+            key = ag.name.strip().lower()
+            if key not in seen:
+                seen[key] = ag
+            else:
+                primary = seen[key]
+                dup = ag
+                db.query(NVR).filter(NVR.agent_id == dup.id).update({NVR.agent_id: primary.id}, synchronize_session=False)
+                db.query(User).filter(User.assigned_agent_id == dup.id).update({User.assigned_agent_id: primary.id}, synchronize_session=False)
+                db.delete(dup)
+        db.commit()
+    except Exception as e:
+        print(f"[AgentList] Deduplication notice: {e}")
+
     query = db.query(Agent)
     if not current_user.is_superadmin:
         if current_user.assigned_agent_id:
@@ -271,7 +290,7 @@ echo [✓] Edge Agent downloaded.
 echo.
 echo [3/3] Launching Edge Agent for Branch '{agent.name}'...
 echo.
-%PYCMD% epic-agent.py --server "{server_url}" --agent "{agent.name}"
+%PYCMD% epic-agent.py --server "{server_url}" --agent "{agent.name}" --agent-id {agent.id}
 echo.
 echo =================================================================
 echo Edge Agent has exited.
@@ -340,7 +359,7 @@ echo "[✓] Edge Agent downloaded."
 echo ""
 echo "[3/3] Launching Edge Agent for Branch '{agent.name}'..."
 echo ""
-$PYCMD epic-agent.py --server "{server_url}" --agent "{agent.name}"
+$PYCMD epic-agent.py --server "{server_url}" --agent "{agent.name}" --agent-id {agent.id}
 echo ""
 read -p "Press Enter to close this terminal..."
 """

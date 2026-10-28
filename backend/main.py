@@ -45,6 +45,32 @@ app.include_router(nvr_router)
 app.include_router(ptz_router)
 
 
+def reconcile_duplicate_agents():
+    """Merge duplicate agents sharing identical names into a single primary agent."""
+    try:
+        from database import get_db
+        from models import Agent, NVR, User
+        db = next(get_db())
+        agents = db.query(Agent).order_by(Agent.id.asc()).all()
+        name_map = {}
+        for ag in agents:
+            key = ag.name.strip().lower()
+            if key not in name_map:
+                name_map[key] = ag
+            else:
+                primary = name_map[key]
+                dup = ag
+                print(f"[Reconcile] Merging duplicate Agent '{dup.name}' (ID: {dup.id}) into Primary (ID: {primary.id})")
+                # Move all NVRs from dup to primary
+                db.query(NVR).filter(NVR.agent_id == dup.id).update({NVR.agent_id: primary.id}, synchronize_session=False)
+                # Reassign any users assigned to dup to primary
+                db.query(User).filter(User.assigned_agent_id == dup.id).update({User.assigned_agent_id: primary.id}, synchronize_session=False)
+                db.delete(dup)
+        db.commit()
+    except Exception as e:
+        print(f"[Reconcile] Startup agent notice: {e}")
+
+
 @app.on_event("startup")
 def startup_event():
     # Run database initialization and core seeds
@@ -52,6 +78,9 @@ def startup_event():
         seed_database()
     except Exception as e:
         print(f"[Startup] DB init notice: {e}")
+
+    # Auto-merge duplicate agents and link NVRs
+    reconcile_duplicate_agents()
 
     # Initialize and sync MediaMTX stream engine natively
     try:
