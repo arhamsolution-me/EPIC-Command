@@ -127,6 +127,8 @@ class MediaMTXManager:
             lines.append(f"  camera_{cam_id}:")
             lines.append(f"    source: {clean_url}")
             lines.append("    sourceOnDemand: true")
+            lines.append("    sourceOnDemandStartTimeout: 15s")
+            lines.append("    sourceOnDemandCloseAfter: 10s")
             lines.append("    rtspTransport: tcp")
 
             # Main stream path for HD viewing
@@ -135,6 +137,8 @@ class MediaMTXManager:
                 lines.append(f"  camera_{cam_id}_main:")
                 lines.append(f"    source: {clean_main}")
                 lines.append("    sourceOnDemand: true")
+                lines.append("    sourceOnDemandStartTimeout: 15s")
+                lines.append("    sourceOnDemandCloseAfter: 10s")
                 lines.append("    rtspTransport: tcp")
 
         # Always include all_others fallback for publisher/test streams
@@ -168,14 +172,36 @@ class MediaMTXManager:
     def sync_via_api(self, cameras: List[Any]) -> bool:
         """
         Dynamically push camera paths into running MediaMTX via its REST API (port 9997).
-        Provides instant zero-restart path registration.
+        Provides instant zero-restart path registration and prunes obsolete camera paths.
         """
         if not self.is_port_in_use(self.api_port):
             return False
 
         try:
             import httpx
-            with httpx.Client(timeout=2.0) as client:
+            with httpx.Client(timeout=3.0) as client:
+                # 1. Collect expected active path names
+                active_names = set()
+                for cam in cameras:
+                    c_id = getattr(cam, "id", None) or (cam.get("id") if isinstance(cam, dict) else None)
+                    if c_id:
+                        active_names.add(f"camera_{c_id}")
+                        active_names.add(f"camera_{c_id}_main")
+
+                # 2. Query and delete obsolete camera paths from MediaMTX memory
+                try:
+                    r_paths = client.get(f"http://127.0.0.1:{self.api_port}/v3/config/paths/list")
+                    if r_paths.status_code == 200:
+                        items = r_paths.json().get("items", [])
+                        for it in items:
+                            p_name = it.get("name") if isinstance(it, dict) else str(it)
+                            if p_name and p_name.startswith("camera_") and p_name not in active_names:
+                                client.delete(f"http://127.0.0.1:{self.api_port}/v3/config/paths/delete/{p_name}")
+                                print(f"[MediaMTX] Pruned obsolete camera stream: {p_name}")
+                except Exception as prune_err:
+                    print(f"[MediaMTX] Prune notice: {prune_err}")
+
+                # 3. Add or update active camera paths
                 for cam in cameras:
                     cam_id = getattr(cam, "id", None) or (cam.get("id") if isinstance(cam, dict) else None)
                     if not cam_id:
@@ -190,6 +216,8 @@ class MediaMTXManager:
                     body = {
                         "source": clean_url,
                         "sourceOnDemand": True,
+                        "sourceOnDemandStartTimeout": "15s",
+                        "sourceOnDemandCloseAfter": "10s",
                         "rtspTransport": "tcp"
                     }
 
@@ -205,13 +233,15 @@ class MediaMTXManager:
                         main_body = {
                             "source": clean_main,
                             "sourceOnDemand": True,
+                            "sourceOnDemandStartTimeout": "15s",
+                            "sourceOnDemandCloseAfter": "10s",
                             "rtspTransport": "tcp"
                         }
                         r_main = client.post(f"http://127.0.0.1:{self.api_port}/v3/config/paths/add/{path_name}_main", json=main_body)
                         if r_main.status_code == 400:
                             client.patch(f"http://127.0.0.1:{self.api_port}/v3/config/paths/patch/{path_name}_main", json=main_body)
 
-            print(f"[MediaMTX] Successfully injected {len(cameras)} camera paths via REST API.")
+            print(f"[MediaMTX] Successfully synced {len(cameras)} camera paths via REST API.")
             return True
         except Exception as e:
             print(f"[MediaMTX] REST API path sync notice: {e}")

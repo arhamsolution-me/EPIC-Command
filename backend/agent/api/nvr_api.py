@@ -104,11 +104,11 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
     if raw_name:
         # Strip out any appended IP if present
         if " - " in raw_name and any(c.isdigit() for c in raw_name):
-            nvr_name = raw_name.split(" - ")[0].strip() or "Synavos"
+            nvr_name = raw_name.split(" - ")[0].strip() or (target_agent.name if (target_agent and target_agent.name) else "NVR Device")
         else:
             nvr_name = raw_name
     else:
-        nvr_name = target_agent.name if (target_agent and target_agent.name) else "Synavos"
+        nvr_name = target_agent.name if (target_agent and target_agent.name) else "NVR Device"
 
     def clean_loc(val):
         return val.strip() if (val and isinstance(val, str) and val.strip() not in ("—", "-", "None")) else None
@@ -172,7 +172,7 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
     # Clean up any other obsolete duplicate NVR records for this agent or matching IP / name
     obsolete_nvrs = db.query(NVR).filter(
         NVR.id != nvr.id,
-        (NVR.agent_id == target_agent.id) | (NVR.ip == req.ip) | (NVR.ip == "200.0.0.25") | (NVR.name == nvr.name)
+        (NVR.agent_id == target_agent.id) | (NVR.ip == req.ip) | (NVR.name == nvr.name)
     ).all()
     for obs in obsolete_nvrs:
         db.query(Camera).filter(Camera.nvr_id == obs.id).delete()

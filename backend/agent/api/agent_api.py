@@ -228,8 +228,8 @@ def download_agent_launcher(agent_id: int, request: Request, db: Session = Depen
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found.")
 
-    # Determine external server URL from request headers
-    host_header = request.headers.get("x-forwarded-host") or request.headers.get("host") or "192.168.1.101"
+    # Determine external server URL dynamically from request headers
+    host_header = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc or "127.0.0.1"
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
     server_url = f"{proto}://{host_header}".rstrip("/")
 
@@ -315,7 +315,7 @@ def download_agent_launcher_linux(agent_id: int, request: Request, db: Session =
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found.")
 
-    host_header = request.headers.get("x-forwarded-host") or request.headers.get("host") or "192.168.1.101"
+    host_header = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc or "127.0.0.1"
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
     server_url = f"{proto}://{host_header}".rstrip("/")
 

@@ -672,7 +672,9 @@ function MainApp() {
 
       setScanResult(data);
       if (!nvrName.trim()) {
-        setNvrName('Synavos');
+        const agObj = agents.find((a) => String(a.id) === String(selectedAgent));
+        const defaultName = agObj ? `${agObj.name} NVR` : 'NVR Device';
+        setNvrName(defaultName);
       }
     } catch (err) {
       setScanError(err.message);

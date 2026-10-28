@@ -9,8 +9,8 @@ Uses 100% Python Standard Library — Zero pip installs needed!
 
 Usage:
     python epic-agent.py
-    python epic-agent.py --server http://192.168.1.101 --agent "MM Alam"
-    python epic-agent.py --server http://192.168.1.101 --agent "MM Alam" --nvr 200.0.0.25 --user admin --pass "admin123"
+    python epic-agent.py --server http://<SERVER_IP> --agent "<BRANCH_NAME>"
+    python epic-agent.py --server http://<SERVER_IP> --agent "<BRANCH_NAME>" --nvr <NVR_IP> --user admin --pass "<PASSWORD>"
 """
 
 import sys
@@ -638,7 +638,9 @@ def start_rtsp_tcp_bridge(local_port: int, target_host: str, target_port: int):
             server_sock.bind(("0.0.0.0", local_port))
             server_sock.listen(50)
             print(f"\n{BOLD}[3/3] RTSP Stream Bridge active on local port {local_port} ➔ {target_host}:{target_port}{RESET}")
-            print(f"      {GREEN}Edge Agent is streaming live!{RESET} (Press Ctrl+C to stop)\n")
+            print(f"      {GREEN}Edge Agent is streaming live!{RESET} (Press Ctrl+C to stop)")
+            print(f"      {YELLOW}[IMPORTANT] Keep this CMD window OPEN to continue streaming.{RESET}")
+            print(f"      {YELLOW}If this window is closed, camera streams will show 'No Signal'.{RESET}\n")
 
             while True:
                 client_sock, client_addr = server_sock.accept()
@@ -679,8 +681,13 @@ def main():
     args = parser.parse_args()
 
     print()
-    server_url = args.server or input("Enter Central Server URL: ").strip() or "http://192.168.1.101"
-    agent_name = args.agent or input("Enter Branch / Agent Name: ").strip() or "Branch"
+    server_url = (args.server or "").strip()
+    while not server_url:
+        server_url = input("Enter Central Server URL (e.g. http://192.168.1.100 or http://myserver.com): ").strip()
+
+    agent_name = (args.agent or "").strip()
+    while not agent_name:
+        agent_name = input("Enter Branch / Agent Name: ").strip()
 
     print(f"\n      Branch Agent   : {BOLD}{agent_name}{RESET}")
     print(f"      Central Server : {CYAN}{server_url}{RESET}")
@@ -688,24 +695,32 @@ def main():
     print("      LOCAL NVR SETUP")
     print("-" * 65)
 
-    nvr_ip = args.nvr or input("Enter NVR IP: ").strip() or "200.0.0.25"
-    username = args.user or input("Enter Admin: ").strip() or "admin"
+    nvr_ip = (args.nvr or "").strip()
+    while not nvr_ip:
+        nvr_ip = input("Enter NVR IP: ").strip()
+
+    username = (args.user or "").strip()
+    if not username:
+        user_inp = input("Enter Admin Username: ").strip()
+        username = user_inp if user_inp else "admin"
+
     password = args.password if args.password is not None else input("Enter Password: ").strip()
 
     # Dynamic ports input
-    port_inp = input("Enter HTTP Port: ").strip()
+    port_inp = input("Enter HTTP Port (or press Enter for auto-detect): ").strip()
     http_port = int(port_inp) if port_inp.isdigit() else (args.http_port or None)
 
-    rtsp_inp = input("Enter RTSP Port: ").strip()
+    rtsp_inp = input("Enter RTSP Port (or press Enter for auto-detect): ").strip()
     rtsp_port = int(rtsp_inp) if rtsp_inp.isdigit() else (args.rtsp_port or None)
 
     # Auto-detect default Bridge IP facing Central Server
-    detected_bridge = "10.254.4.2"
+    detected_bridge = "127.0.0.1"
     try:
-        server_host = urllib.parse.urlparse(server_url).hostname or "192.168.1.101"
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect((server_host, 80))
-            detected_bridge = s.getsockname()[0]
+        server_host = urllib.parse.urlparse(server_url).hostname
+        if server_host:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect((server_host, 80))
+                detected_bridge = s.getsockname()[0]
     except Exception:
         pass
 

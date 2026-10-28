@@ -27,7 +27,7 @@ def send_welcome_email(
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASS")
     from_name = os.getenv("SMTP_FROM_NAME", "EPIC Command")
-    from_email = os.getenv("SMTP_FROM_EMAIL", "no-reply@synavos.com")
+    from_email = os.getenv("SMTP_FROM_EMAIL", "no-reply@epic-command.com")
 
     if not all([smtp_host, smtp_user, smtp_pass, from_email]):
         logger.warning("SMTP configuration is incomplete. Skipping email delivery.")
