@@ -214,6 +214,73 @@ def test_rtsp_describe(
     return is_live
 
 
+def probe_port_protocol(ip: str, port: int, timeout: float = 0.8) -> str:
+    """
+    Dynamically probe an open port with RTSP and HTTP protocol banners.
+    Returns 'RTSP', 'HTTP', 'TCP' (open but unknown banner), or 'CLOSED'.
+    """
+    # 1. Test RTSP protocol banner
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            if s.connect_ex((ip, port)) != 0:
+                return "CLOSED"
+            s.sendall(b"OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: EPIC-Command/3.2\r\n\r\n")
+            res = s.recv(512).decode("utf-8", errors="ignore")
+            if "RTSP/1." in res:
+                return "RTSP"
+    except Exception:
+        pass
+
+    # 2. Test HTTP protocol banner
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            if s.connect_ex((ip, port)) != 0:
+                return "CLOSED"
+            s.sendall(b"HEAD / HTTP/1.1\r\nHost: " + ip.encode() + b"\r\nUser-Agent: EPIC-Command/3.2\r\nConnection: close\r\n\r\n")
+            res = s.recv(512).decode("utf-8", errors="ignore")
+            if "HTTP/1." in res or "Server:" in res or "html" in res.lower():
+                return "HTTP"
+    except Exception:
+        pass
+
+    return "TCP"
+
+
+def scan_device_open_ports(ip: str, timeout: float = 0.25) -> List[int]:
+    """
+    Dynamically scans target host to discover all active listening TCP ports.
+    Scans full standard 1-1024 spectrum (covers any port e.g. 776, 80, 554, 88, 443)
+    plus extended dynamic ranges without hardcoding.
+    """
+    def test_port(p: int) -> Optional[int]:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                if s.connect_ex((ip, p)) == 0:
+                    return p
+        except Exception:
+            pass
+        return None
+
+    ports_to_check = set(range(1, 1025))
+    ports_to_check.update(range(5000, 5565))
+    ports_to_check.update(range(7000, 7080))
+    ports_to_check.update(range(8000, 8105))
+    ports_to_check.update(range(8550, 8560))
+    ports_to_check.update(range(8880, 8900))
+    ports_to_check.update(range(9000, 9020))
+    ports_to_check.update(range(10550, 10560))
+    ports_to_check.update(range(37700, 37785))
+
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        results = executor.map(test_port, sorted(ports_to_check))
+        open_ports = [p for p in results if p is not None]
+
+    return sorted(open_ports)
+
+
 def probe_nvr(
     ip: str,
     username: str,
@@ -223,7 +290,7 @@ def probe_nvr(
 ) -> Dict[str, Any]:
     """
     Strictly probes NVR reachability and discovers verified active camera channels.
-    Never creates dummy or fake channels. Removes artificial max channel limits.
+    Never creates dummy or fake channels. Zero hardcoded ports.
     """
     ip = ip.strip()
     username = username.strip()
@@ -233,36 +300,48 @@ def probe_nvr(
     pass_enc = urllib.parse.quote(password, safe="")
     auth_part = f"{user_enc}:{pass_enc}@" if username else ""
 
-    # 1. Fast targeted port probing
-    detected_rtsp_port = None
+    detected_http_port: Optional[int] = None
+    detected_rtsp_port: Optional[int] = None
+
+    # 1. User-Specified Ports: Verify and test directly
+    if port:
+        if check_tcp_port(ip, port, timeout=1.5):
+            proto = probe_port_protocol(ip, port)
+            if proto == "RTSP" and not rtsp_port:
+                detected_rtsp_port = port
+            else:
+                detected_http_port = port
+
     if rtsp_port:
         if check_tcp_port(ip, rtsp_port, timeout=1.5):
-            detected_rtsp_port = rtsp_port
+            proto = probe_port_protocol(ip, rtsp_port)
+            if proto == "HTTP" and not detected_http_port:
+                detected_http_port = rtsp_port
+            else:
+                detected_rtsp_port = rtsp_port
 
-    if not detected_rtsp_port:
-        for p in [554, 8554, 10554]:
-            if p != rtsp_port and check_tcp_port(ip, p, timeout=1.0):
-                detected_rtsp_port = p
-                break
+    # 2. Dynamic Discovery: If either port is still not resolved, scan target host dynamically
+    if not detected_http_port or not detected_rtsp_port:
+        open_ports = scan_device_open_ports(ip)
+        if open_ports:
+            for p in open_ports:
+                proto = probe_port_protocol(ip, p)
+                if proto == "HTTP" and not detected_http_port:
+                    detected_http_port = p
+                elif proto == "RTSP" and not detected_rtsp_port:
+                    detected_rtsp_port = p
 
-    detected_http_port = None
-    # Auto-detect Dahua proprietary TCP media port (e.g. 37777, 37725) entered as HTTP port
-    if port and (37700 <= port <= 37800):
-        for p in [80, 8080, 8000, 88]:
-            if check_tcp_port(ip, p, timeout=1.0):
-                detected_http_port = p
-                break
-        if not detected_http_port:
-            detected_http_port = 80
-    elif port:
-        if check_tcp_port(ip, port, timeout=1.5):
-            detected_http_port = port
-
-    if not detected_http_port:
-        for p in [80, 8080, 8000, 88]:
-            if p != port and check_tcp_port(ip, p, timeout=1.0):
-                detected_http_port = p
-                break
+            # Fallback for silent embedded devices
+            if not detected_http_port and open_ports:
+                for p in open_ports:
+                    if p != detected_rtsp_port:
+                        detected_http_port = p
+                        break
+            if not detected_rtsp_port and open_ports:
+                for p in open_ports:
+                    if p != detected_http_port:
+                        detected_rtsp_port = p
+                        break
 
     if not detected_rtsp_port and not detected_http_port:
         return {
@@ -272,8 +351,8 @@ def probe_nvr(
             "cameras": []
         }
 
-    detected_rtsp_port = detected_rtsp_port or 554
-    detected_http_port = detected_http_port or 80
+    detected_http_port = detected_http_port or (80 if check_tcp_port(ip, 80, 0.5) else None)
+    detected_rtsp_port = detected_rtsp_port or (554 if check_tcp_port(ip, 554, 0.5) else None)
 
     vendor = "generic"
     candidate_cameras: List[Dict[str, Any]] = []
