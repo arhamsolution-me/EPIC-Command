@@ -563,9 +563,8 @@ export default function RoleManagementView() {
                   </tr>
                 ) : paginatedRoles.length === 0 ? (
                   <tr>
-                    <td colSpan="5" style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
-                      <Shield size={36} color="#cbd5e1" style={{ margin: '0 auto 8px' }} />
-                      <div style={{ fontWeight: 600, color: '#334155' }}>No roles found matching criteria</div>
+                    <td colSpan="5" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                      No data found
                     </td>
                   </tr>
                 ) : (

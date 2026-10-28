@@ -459,8 +459,8 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                 </tr>
               ) : paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '50px 20px', color: '#94a3b8' }}>
-                    No provinces found. Click "+ Add Province" to create one.
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                    No data found
                   </td>
                 </tr>
               ) : (
@@ -537,8 +537,8 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                 </tr>
               ) : paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '50px 20px', color: '#94a3b8' }}>
-                    No cities found. Click "+ Add City" to create one.
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                    No data found
                   </td>
                 </tr>
               ) : (
@@ -615,8 +615,8 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                 </tr>
               ) : paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '50px 20px', color: '#94a3b8' }}>
-                    No areas found. Click "+ Add Area" to create one.
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                    No data found
                   </td>
                 </tr>
               ) : (
@@ -694,8 +694,8 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                 </tr>
               ) : paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '50px 20px', color: '#94a3b8' }}>
-                    No sites found. Click "+ Add Site" to create one.
+                  <td colSpan="6" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                    No data found
                   </td>
                 </tr>
               ) : (

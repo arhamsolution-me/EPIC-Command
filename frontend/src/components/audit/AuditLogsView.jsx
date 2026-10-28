@@ -102,9 +102,8 @@ export default function AuditLogsView() {
           <tbody>
             {logs.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--text-muted)' }}>
-                  <FileText size={36} color="#94a3b8" style={{ margin: '0 auto 8px' }} />
-                  <div>No activity logs found</div>
+                <td colSpan="7" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                  No data found
                 </td>
               </tr>
             ) : (

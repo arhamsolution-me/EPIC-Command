@@ -197,9 +197,8 @@ export default function UserManagementView() {
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--text-muted)' }}>
-                  <Users size={36} color="#94a3b8" style={{ margin: '0 auto 8px' }} />
-                  <div>No users found matching criteria</div>
+                <td colSpan="9" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                  No data found
                 </td>
               </tr>
             ) : (

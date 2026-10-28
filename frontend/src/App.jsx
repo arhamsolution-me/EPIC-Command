@@ -1494,24 +1494,8 @@ function MainApp() {
                   <tbody>
                     {filteredAgents.length === 0 ? (
                       <tr>
-                        <td colSpan="13" style={{ textAlign: 'center', padding: '60px 20px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                            <Bot size={40} color="var(--text-muted)" />
-                            <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.95rem' }}>No Agents found</span>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', maxWidth: '380px', margin: '2px 0 8px' }}>
-                              {agentSearch || agentStatusFilter || agentProvinceFilter || agentCityFilter
-                                ? 'No agents match your active filter criteria.'
-                                : 'Create an Agent first to register and organize your NVR surveillance devices.'}
-                            </p>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={() => setIsAgentModalOpen(true)}
-                            >
-                              <Plus size={14} />
-                              Add Agent
-                            </button>
-                          </div>
+                        <td colSpan="13" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                          No data found
                         </td>
                       </tr>
                     ) : (
@@ -1991,45 +1975,8 @@ function MainApp() {
                   <tbody>
                     {filteredNvrs.length === 0 ? (
                       <tr>
-                        <td colSpan="14" style={{ textAlign: 'center', padding: '60px 20px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                            <Cctv size={38} color="var(--text-muted)" />
-                            <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.95rem' }}>No NVR found</span>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', maxWidth: '380px', margin: '2px 0 8px' }}>
-                              {nvrSearch || nvrStatusFilter || nvrProvinceFilter || nvrCityFilter || nvrAreaFilter || nvrSiteFilter
-                                ? 'No NVR devices match your active filter criteria.'
-                                : 'Add your first NVR device to monitor live camera streams across locations.'}
-                            </p>
-                            {isAgentLinked ? (
-                              <button
-                                type="button"
-                                className="btn btn-primary btn-sm"
-                                onClick={handleOpenModal}
-                              >
-                                <Plus size={14} />
-                                Add NVR
-                              </button>
-                            ) : (
-                              <div
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  padding: '6px 14px',
-                                  borderRadius: '6px',
-                                  background: '#fef2f2',
-                                  border: '1px solid #fecaca',
-                                  color: '#dc2626',
-                                  fontSize: '0.82rem',
-                                  fontWeight: 600,
-                                  marginTop: '4px'
-                                }}
-                              >
-                                <AlertTriangle size={14} color="#dc2626" />
-                                <span>Link with Agent First</span>
-                              </div>
-                            )}
-                          </div>
+                        <td colSpan="14" style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontSize: '0.86rem', fontWeight: 500 }}>
+                          No data found
                         </td>
                       </tr>
                     ) : (
