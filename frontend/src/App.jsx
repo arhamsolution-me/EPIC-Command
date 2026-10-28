@@ -2893,10 +2893,7 @@ function MainApp() {
                 }}
               >
                 <Terminal size={15} />
-                <span>Edge Agent (Remote Branch • Zero-VPN)</span>
-                <span style={{ fontSize: '0.68rem', background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                  RECOMMENDED
-                </span>
+                <span>Remote Connection</span>
               </button>
               <button
                 type="button"

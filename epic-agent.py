@@ -401,20 +401,29 @@ def main():
     args = parser.parse_args()
 
     print()
-    server_url = args.server or input("Enter Central Server URL [http://192.168.1.101]: ").strip() or "http://192.168.1.101"
-    agent_name = args.agent or input("Enter Agent / Branch Name [MM Alam]: ").strip() or "MM Alam"
+    server_url = args.server or input("Enter Central Server URL: ").strip() or "http://192.168.1.101"
+    agent_name = args.agent or input("Enter Branch / Agent Name: ").strip() or "Branch"
 
     print(f"\n      Branch Agent   : {BOLD}{agent_name}{RESET}")
     print(f"      Central Server : {CYAN}{server_url}{RESET}")
     print("-" * 65)
-    print("      LOCAL NVR SETUP (Please enter your local branch NVR details)")
+    print("      LOCAL NVR SETUP")
     print("-" * 65)
 
-    nvr_ip = args.nvr or input("Enter Local NVR IP address [200.0.0.25]: ").strip() or "200.0.0.25"
-    username = args.user or input("Enter NVR Username [admin]: ").strip() or "admin"
-    password = args.password if args.password is not None else (input("Enter NVR Password [admin@mm@store@123]: ").strip() or "admin@mm@store@123")
+    nvr_ip = args.nvr or input("Enter NVR IP: ").strip() or "200.0.0.25"
+    username = args.user or input("Enter Username: ").strip() or "admin"
+    password = args.password if args.password is not None else input("Enter Password: ").strip()
+
+    # Ask for ports directly
     http_port = args.http_port
+    if http_port is None:
+        port_inp = input("Enter HTTP Port: ").strip()
+        http_port = int(port_inp) if port_inp.isdigit() else None
+
     rtsp_port = args.rtsp_port
+    if rtsp_port is None:
+        rtsp_inp = input("Enter RTSP Port: ").strip()
+        rtsp_port = int(rtsp_inp) if rtsp_inp.isdigit() else 554
 
     # Auto-detect default Bridge IP facing Central Server
     detected_bridge = "10.254.4.2"
@@ -426,11 +435,7 @@ def main():
     except Exception:
         pass
 
-    if args.bridge_ip:
-        bridge_ip = args.bridge_ip
-    else:
-        bridge_input = input(f"Enter Local Machine IP facing Central Server [{detected_bridge}]: ").strip()
-        bridge_ip = bridge_input or detected_bridge
+    bridge_ip = args.bridge_ip or detected_bridge
 
     # 1. Local Probe
     nvr_info = probe_local_nvr(
