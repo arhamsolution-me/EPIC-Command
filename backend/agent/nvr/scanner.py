@@ -136,14 +136,14 @@ def test_rtsp_describe_detailed(
 
                     ha1 = hashlib.md5(f"{username}:{realm}:{password}".encode("utf-8")).hexdigest()
 
-                    # Attempt A: Match request line exactly with relative path URI
-                    auth_hdr_rel = make_digest_auth_header(username, realm, nonce, path, ha1, qop, opaque)
+                    # Attempt A: Match request line exactly with full RTSP URL (Standard for VLC, FFmpeg, Dahua)
+                    auth_hdr_full = make_digest_auth_header(username, realm, nonce, rtsp_url, ha1, qop, opaque)
                     req2 = (
-                        f"DESCRIBE {path} RTSP/1.0\r\n"
+                        f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
                         f"CSeq: {cseq}\r\n"
                         f"User-Agent: EPIC-Command/3.2\r\n"
                         f"Accept: application/sdp\r\n"
-                        f"{auth_hdr_rel}\r\n\r\n"
+                        f"{auth_hdr_full}\r\n\r\n"
                     )
                     s.sendall(req2.encode("utf-8"))
                     data2 = s.recv(4096).decode("utf-8", errors="ignore")
@@ -157,16 +157,16 @@ def test_rtsp_describe_detailed(
                     if "RTSP/1.0 404" in data2 or "RTSP/1.0 454" in data2:
                         return (False, "NOT_FOUND")
 
-                    # Attempt B: Fallback with full rtsp_url
+                    # Attempt B: Fallback with relative path URI if server strictly requires relative path
                     if "RTSP/1.0 401" in data2:
                         cseq += 1
-                        auth_hdr_full = make_digest_auth_header(username, realm, nonce, rtsp_url, ha1, qop, opaque)
+                        auth_hdr_rel = make_digest_auth_header(username, realm, nonce, path, ha1, qop, opaque)
                         req3 = (
-                            f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
+                            f"DESCRIBE {path} RTSP/1.0\r\n"
                             f"CSeq: {cseq}\r\n"
                             f"User-Agent: EPIC-Command/3.2\r\n"
                             f"Accept: application/sdp\r\n"
-                            f"{auth_hdr_full}\r\n\r\n"
+                            f"{auth_hdr_rel}\r\n\r\n"
                         )
                         s.sendall(req3.encode("utf-8"))
                         data3 = s.recv(4096).decode("utf-8", errors="ignore")
