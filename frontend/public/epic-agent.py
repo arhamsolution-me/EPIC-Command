@@ -28,7 +28,7 @@ import hashlib
 import base64
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 
 def setup_console():
