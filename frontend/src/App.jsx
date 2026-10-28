@@ -41,6 +41,7 @@ import {
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './components/auth/LoginPage';
 import ChangePasswordModal from './components/auth/ChangePasswordModal';
+import ChangePasswordView from './components/auth/ChangePasswordView';
 import Sidebar from './components/layout/Sidebar';
 import TopHeader from './components/layout/TopHeader';
 import DashboardView from './components/dashboard/DashboardView';
@@ -1289,7 +1290,7 @@ function MainApp() {
         {/* Top Header Bar */}
         <TopHeader
           activeNav={activeNav}
-          onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
+          onOpenChangePassword={() => setActiveNav('change-password')}
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={handleToggleSidebar}
         />
@@ -1313,6 +1314,11 @@ function MainApp() {
           {/* 4. LOCATION MANAGEMENT */}
           {activeNav === 'locations' && hasPermission('LOCATION_VIEW') && (
             <LocationManagementView activeSubTab={locationSubTab} onTabChange={setLocationSubTab} />
+          )}
+
+          {/* 5. CHANGE PASSWORD DEDICATED PAGE */}
+          {activeNav === 'change-password' && (
+            <ChangePasswordView onBack={() => setActiveNav('dashboard')} />
           )}
 
 

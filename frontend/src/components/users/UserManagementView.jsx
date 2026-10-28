@@ -16,9 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
-import AddUserModal from './AddUserModal';
 import AddUserView from './AddUserView';
-import EditUserModal from './EditUserModal';
 
 export default function UserManagementView() {
   const { user, hasPermission } = useAuth();
@@ -31,7 +29,6 @@ export default function UserManagementView() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [openActionId, setOpenActionId] = useState(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedUserForEdit, setSelectedUserForEdit] = useState(null);
 
   // Close actions dropdown on outside click
@@ -116,9 +113,19 @@ export default function UserManagementView() {
   if (isModalOpen) {
     return (
       <AddUserView
-        onBack={() => setIsModalOpen(false)}
+        editingUser={selectedUserForEdit}
+        onBack={() => {
+          setIsModalOpen(false);
+          setSelectedUserForEdit(null);
+        }}
         onUserCreated={() => {
           setIsModalOpen(false);
+          setSelectedUserForEdit(null);
+          fetchUsers();
+        }}
+        onUserSaved={() => {
+          setIsModalOpen(false);
+          setSelectedUserForEdit(null);
           fetchUsers();
         }}
       />
@@ -158,7 +165,10 @@ export default function UserManagementView() {
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                setSelectedUserForEdit(null);
+                setIsModalOpen(true);
+              }}
               style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px' }}
             >
               <Plus size={15} />
@@ -298,7 +308,7 @@ export default function UserManagementView() {
                                 onClick={() => {
                                   setOpenActionId(null);
                                   setSelectedUserForEdit(u);
-                                  setIsEditModalOpen(true);
+                                  setIsModalOpen(true);
                                 }}
                               >
                                 <Edit2 size={13} color="#2563eb" />
@@ -392,24 +402,6 @@ export default function UserManagementView() {
         </div>
       )}
 
-      {/* Add User Modal */}
-      <AddUserModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onUserCreated={() => fetchUsers()}
-      />
-      {/* Edit User Modal */}
-      {isEditModalOpen && selectedUserForEdit && (
-        <EditUserModal
-          isOpen={isEditModalOpen}
-          user={selectedUserForEdit}
-          onClose={() => {
-            setIsEditModalOpen(false);
-            setSelectedUserForEdit(null);
-          }}
-          onUserUpdated={fetchUsers}
-        />
-      )}
     </div>
   );
 }

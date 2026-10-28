@@ -19,7 +19,8 @@ export default function TopHeader({
     agents: 'Agent',
     locations: 'Locations',
     users: 'Users',
-    roles: 'Roles & Permissions'
+    roles: 'Roles & Permissions',
+    'change-password': 'Change Password'
   };
 
   // Close dropdown on outside click
