@@ -464,7 +464,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                   </td>
                 </tr>
               ) : (
-                paginatedItems.map((prov) => (
+                paginatedItems.map((prov, idx) => (
                   <tr key={prov.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -492,7 +492,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                           <MoreVertical size={16} />
                         </button>
                         {openActionId === prov.id && (
-                          <div className="action-menu-dropdown right-aligned">
+                          <div className={`action-menu-dropdown right-aligned ${paginatedItems.length >= 3 && idx >= paginatedItems.length - 2 ? 'open-up' : 'open-down'}`}>
                             {hasPermission('LOCATION_DELETE') && (
                               <button
                                 type="button"
@@ -542,7 +542,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                   </td>
                 </tr>
               ) : (
-                paginatedItems.map((city) => (
+                paginatedItems.map((city, idx) => (
                   <tr key={city.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -570,7 +570,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                           <MoreVertical size={16} />
                         </button>
                         {openActionId === city.id && (
-                          <div className="action-menu-dropdown right-aligned">
+                          <div className={`action-menu-dropdown right-aligned ${paginatedItems.length >= 3 && idx >= paginatedItems.length - 2 ? 'open-up' : 'open-down'}`}>
                             {hasPermission('LOCATION_DELETE') && (
                               <button
                                 type="button"
@@ -620,7 +620,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                   </td>
                 </tr>
               ) : (
-                paginatedItems.map((area) => (
+                paginatedItems.map((area, idx) => (
                   <tr key={area.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -648,7 +648,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                           <MoreVertical size={16} />
                         </button>
                         {openActionId === area.id && (
-                          <div className="action-menu-dropdown right-aligned">
+                          <div className={`action-menu-dropdown right-aligned ${paginatedItems.length >= 3 && idx >= paginatedItems.length - 2 ? 'open-up' : 'open-down'}`}>
                             {hasPermission('LOCATION_DELETE') && (
                               <button
                                 type="button"
@@ -699,7 +699,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                   </td>
                 </tr>
               ) : (
-                paginatedItems.map((site) => (
+                paginatedItems.map((site, idx) => (
                   <tr key={site.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -730,7 +730,7 @@ export default function LocationManagementView({ activeSubTab = 'provinces', onT
                           <MoreVertical size={16} />
                         </button>
                         {openActionId === site.id && (
-                          <div className="action-menu-dropdown right-aligned">
+                          <div className={`action-menu-dropdown right-aligned ${paginatedItems.length >= 3 && idx >= paginatedItems.length - 2 ? 'open-up' : 'open-down'}`}>
                             {hasPermission('LOCATION_DELETE') && (
                               <button
                                 type="button"

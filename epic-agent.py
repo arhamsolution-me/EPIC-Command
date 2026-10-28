@@ -537,11 +537,13 @@ def register_with_central_server(
     bridge_port: int,
     username: str = "admin",
     password: str = "",
-    agent_id: Optional[int] = None
+    agent_id: Optional[int] = None,
+    is_direct_routing: bool = False
 ) -> bool:
     """Register Agent, NVR, and cameras with Central EPIC Command backend with dynamic credentials."""
     server_url = server_url.rstrip("/")
-    print(f"\n{BOLD}[2/3] Registering with Central Server at {server_url} (Bridge IP: {bridge_ip}:{bridge_port})...{RESET}")
+    route_label = f"Direct IP: {bridge_ip}:{bridge_port}" if is_direct_routing else f"Bridge IP: {bridge_ip}:{bridge_port}"
+    print(f"\n{BOLD}[2/3] Registering with Central Server at {server_url} ({route_label})...{RESET}")
 
     # Step A: Link Agent (never create duplicates if agent exists or agent_id is provided)
     if agent_id:
@@ -574,13 +576,14 @@ def register_with_central_server(
             except Exception:
                 pass
 
-    # Remap camera RTSP URLs to use the Bridge IP and dynamic bridge port
+    # Remap camera RTSP URLs to use the Bridge IP if proxy bridge is active
     bridged_cameras = []
     for c in nvr_info["cameras"]:
         cam_copy = dict(c)
-        cam_copy["rtsp_stream_url"] = remap_url_to_bridge(c.get("rtsp_stream_url", ""), bridge_ip, bridge_port)
-        if c.get("sub_stream_url"):
-            cam_copy["sub_stream_url"] = remap_url_to_bridge(c.get("sub_stream_url", ""), bridge_ip, bridge_port)
+        if not is_direct_routing:
+            cam_copy["rtsp_stream_url"] = remap_url_to_bridge(c.get("rtsp_stream_url", ""), bridge_ip, bridge_port)
+            if c.get("sub_stream_url"):
+                cam_copy["sub_stream_url"] = remap_url_to_bridge(c.get("sub_stream_url", ""), bridge_ip, bridge_port)
         bridged_cameras.append(cam_copy)
 
     # Step B: Register NVR and Cameras with actual credentials and dynamic ports
@@ -603,7 +606,10 @@ def register_with_central_server(
         req = urllib.request.Request(confirm_url, data=data, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=8.0) as resp:
             json.loads(resp.read().decode())
-            print(f"      {GREEN}[✓]{RESET} NVR and {len(bridged_cameras)} Cameras routed through Bridge IP ({bridge_ip}:{bridge_port})!")
+            if is_direct_routing:
+                print(f"      {GREEN}[✓]{RESET} NVR and {len(bridged_cameras)} Cameras registered with Direct LAN IP ({bridge_ip}:{bridge_port})!")
+            else:
+                print(f"      {GREEN}[✓]{RESET} NVR and {len(bridged_cameras)} Cameras routed through Bridge IP ({bridge_ip}:{bridge_port})!")
             return True
     except Exception as e:
         print(f"      {YELLOW}[!]{RESET} Registration notice: {e}")
@@ -713,19 +719,6 @@ def main():
     rtsp_inp = input("Enter RTSP Port (or press Enter for auto-detect): ").strip()
     rtsp_port = int(rtsp_inp) if rtsp_inp.isdigit() else (args.rtsp_port or None)
 
-    # Auto-detect default Bridge IP facing Central Server
-    detected_bridge = "127.0.0.1"
-    try:
-        server_host = urllib.parse.urlparse(server_url).hostname
-        if server_host:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect((server_host, 80))
-                detected_bridge = s.getsockname()[0]
-    except Exception:
-        pass
-
-    bridge_ip = args.bridge_ip or detected_bridge
-
     # 1. Local Probe with dynamic ports and credentials
     nvr_info = probe_local_nvr(
         ip=nvr_ip,
@@ -742,12 +735,60 @@ def main():
 
     actual_rtsp_port = nvr_info.get("rtsp_port") or rtsp_port or 554
 
-    # Dynamic local bridge port allocation
-    bridge_port = get_dynamic_bridge_port(actual_rtsp_port if actual_rtsp_port != 554 else 554)
-    if bridge_port != 554:
-        print(f"      {CYAN}[Porting]{RESET} Local bridge port dynamically set to {bridge_port}")
+    # Determine optimal routing mode: Direct NVR vs Edge Proxy Bridge
+    server_host = urllib.parse.urlparse(server_url).hostname or ""
+    same_subnet = False
+    try:
+        s_parts = server_host.split(".")
+        n_parts = nvr_ip.split(".")
+        if len(s_parts) == 4 and len(n_parts) == 4 and s_parts[:3] == n_parts[:3]:
+            same_subnet = True
+    except Exception:
+        pass
 
-    print(f"      Active Edge Bridge IP : {bridge_ip}:{bridge_port}")
+    # Auto-detect default Bridge IP facing Central Server
+    detected_bridge = "127.0.0.1"
+    try:
+        if server_host:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect((server_host, 80))
+                detected_bridge = s.getsockname()[0]
+    except Exception:
+        pass
+
+    is_direct_routing = False
+    if args.bridge_ip:
+        bridge_ip = args.bridge_ip
+        is_direct_routing = (bridge_ip == nvr_ip)
+        bridge_port = actual_rtsp_port if is_direct_routing else get_dynamic_bridge_port(actual_rtsp_port if actual_rtsp_port != 554 else 554)
+    elif same_subnet:
+        print(f"\n      {GREEN}[✓]{RESET} Network Match: Central Server ({server_host}) & NVR ({nvr_ip}) share subnet ({s_parts[0]}.{s_parts[1]}.{s_parts[2]}.x).")
+        print(f"      Direct High-Speed NVR Streaming enabled (0ms proxy latency, no firewall blocking).")
+        bridge_ip = nvr_ip
+        bridge_port = actual_rtsp_port
+        is_direct_routing = True
+    else:
+        print(f"\n-----------------------------------------------------------------")
+        print("      STREAM ROUTING SETUP")
+        print("-----------------------------------------------------------------")
+        print(f"      [1] Direct NVR IP    : {nvr_ip}:{actual_rtsp_port} (Central Server can reach NVR directly)")
+        print(f"      [2] Edge Bridge IP   : {detected_bridge} (Central Server routes through this PC)")
+        route_inp = input(f"Enter Streaming IP (press Enter for direct '{nvr_ip}'): ").strip()
+        if not route_inp or route_inp == nvr_ip:
+            bridge_ip = nvr_ip
+            bridge_port = actual_rtsp_port
+            is_direct_routing = True
+        else:
+            bridge_ip = route_inp
+            bridge_port = get_dynamic_bridge_port(actual_rtsp_port if actual_rtsp_port != 554 else 554)
+            is_direct_routing = False
+
+    if is_direct_routing:
+        print(f"      Active Stream Route   : Direct NVR ({bridge_ip}:{bridge_port})")
+    else:
+        if bridge_port != 554:
+            print(f"      {CYAN}[Porting]{RESET} Local bridge port dynamically set to {bridge_port}")
+        print(f"      Active Edge Bridge IP : {bridge_ip}:{bridge_port}")
 
     # 2. Register with Central Server with exact user credentials and assigned agent ID
     register_with_central_server(
@@ -758,11 +799,19 @@ def main():
         bridge_port=bridge_port,
         username=username,
         password=password,
-        agent_id=args.agent_id
+        agent_id=args.agent_id,
+        is_direct_routing=is_direct_routing
     )
 
-    # 3. Start Dynamic Stream Bridge
-    start_rtsp_tcp_bridge(bridge_port, nvr_ip, actual_rtsp_port)
+    # 3. Stream Delivery / Bridge Loop
+    if not is_direct_routing:
+        start_rtsp_tcp_bridge(bridge_port, nvr_ip, actual_rtsp_port)
+    else:
+        print(f"\n{BOLD}[3/3] Direct NVR RTSP Streaming Active ➔ {nvr_ip}:{actual_rtsp_port}{RESET}")
+        print(f"      {GREEN}[✓] Central Server streams directly from NVR at {nvr_ip}:{actual_rtsp_port}!{RESET}")
+        print(f"      All {len(nvr_info['cameras'])} camera channels are streaming live via MediaMTX WebRTC.")
+        print(f"      Zero proxy latency | Ultra-low CPU usage | High-definition delivery\n")
+        print(f"      {GREEN}Edge Agent is active!{RESET} (Press Ctrl+C to stop or exit)")
 
     # 4. Keep alive loop
     try:

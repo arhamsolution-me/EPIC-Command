@@ -299,7 +299,7 @@ export default function UserManagementView() {
                         </button>
 
                         {openActionId === u.id && (
-                          <div className={`action-menu-dropdown right-aligned ${idx >= users.length - 1 && users.length >= 4 ? 'open-up' : 'open-down'}`}>
+                          <div className={`action-menu-dropdown right-aligned ${users.length >= 3 && idx >= users.length - 2 ? 'open-up' : 'open-down'}`}>
                             {hasPermission('USER_UPDATE') && (
                               <button
                                 type="button"

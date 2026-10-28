@@ -571,7 +571,7 @@ export default function RoleManagementView() {
                   paginatedRoles.map((role, idx) => {
                     const assignedCount = role.total_users || 0;
                     const isSuper = role.name === 'Super Admin';
-                    const isBottomRow = idx >= paginatedRoles.length - 2 && paginatedRoles.length > 2;
+                    const isBottomRow = paginatedRoles.length >= 3 && idx >= paginatedRoles.length - 2;
 
                     return (
                       <tr

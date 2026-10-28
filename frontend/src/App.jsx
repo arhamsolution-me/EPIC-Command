@@ -1503,7 +1503,7 @@ function MainApp() {
                         const isExpanded = expandedAgentId === agent.id;
                         const isOnline = agent.status === 'active' || agent.status === 'online';
                         const agentNvrs = agent.nvrs || [];
-                        const isBottomAgent = agentIdx >= paginatedAgents.length - 1 && paginatedAgents.length >= 4;
+                        const isBottomAgent = paginatedAgents.length >= 3 && agentIdx >= paginatedAgents.length - 2;
 
                         return (
                           <React.Fragment key={agent.id}>
@@ -1982,7 +1982,7 @@ function MainApp() {
                     ) : (
                       paginatedNvrs.map((nvr, nvrIdx) => {
                         const isExpanded = expandedRowId === nvr.id;
-                        const isBottomNvr = nvrIdx >= paginatedNvrs.length - 1 && paginatedNvrs.length >= 4;
+                        const isBottomNvr = paginatedNvrs.length >= 3 && nvrIdx >= paginatedNvrs.length - 2;
 
                         return (
                           <React.Fragment key={nvr.id}>

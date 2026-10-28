@@ -250,8 +250,12 @@ def update_nvr(nvr_id: int, req: UpdateNVRRequest, db: Session = Depends(get_db)
     nvr = db.query(NVR).filter(NVR.id == nvr_id).first()
     if not nvr:
         raise HTTPException(status_code=404, detail="NVR not found.")
+    old_ip = nvr.ip
+    ip_changed = False
     if req.name is not None and req.name.strip(): nvr.name = req.name.strip()
-    if req.ip is not None and req.ip.strip(): nvr.ip = req.ip.strip()
+    if req.ip is not None and req.ip.strip() and req.ip.strip() != old_ip:
+        nvr.ip = req.ip.strip()
+        ip_changed = True
     if req.port is not None: nvr.port = req.port
     if req.rtsp_port is not None: nvr.rtsp_port = req.rtsp_port
     if req.username is not None and req.username.strip(): nvr.username = req.username.strip()
@@ -260,8 +264,25 @@ def update_nvr(nvr_id: int, req: UpdateNVRRequest, db: Session = Depends(get_db)
     if req.city is not None: nvr.city = req.city
     if req.area is not None: nvr.area = req.area
     if req.site is not None: nvr.site = req.site
+
+    if ip_changed:
+        import re
+        cams = db.query(Camera).filter(Camera.nvr_id == nvr_id).all()
+        for c in cams:
+            if c.rtsp_stream_url:
+                c.rtsp_stream_url = re.sub(r'@[^:/]+:', f'@{nvr.ip}:', c.rtsp_stream_url)
+            if c.sub_stream_url:
+                c.sub_stream_url = re.sub(r'@[^:/]+:', f'@{nvr.ip}:', c.sub_stream_url)
+
     db.commit()
     db.refresh(nvr)
+
+    if ip_changed:
+        try:
+            media_manager.sync_from_database()
+        except Exception as e:
+            print(f"[MediaMTX] Auto-sync after NVR update notice: {e}")
+
     return {"success": True, "message": "NVR updated successfully.", "nvr": nvr.to_dict()}
 
 

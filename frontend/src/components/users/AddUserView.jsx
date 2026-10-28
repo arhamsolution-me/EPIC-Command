@@ -424,9 +424,6 @@ export default function AddUserView({
                 </option>
               ))}
             </select>
-            <span style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px' }}>
-              You can leave this unassigned. The user will have full access scoped by their selected locations.
-            </span>
           </div>
 
           {/* Submit / Cancel Buttons */}

@@ -142,8 +142,8 @@ body {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   overflow-x: auto;
-  min-height: 240px;
-  padding-bottom: 60px;
+  min-height: 280px;
+  padding-bottom: 110px;
 }
 
 .data-table {
@@ -2698,11 +2698,10 @@ body {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 14px;
-  overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   margin-bottom: 24px;
   position: relative;
-  min-height: 180px;
+  min-height: 280px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
@@ -2714,6 +2713,8 @@ body {
   max-width: 100%;
   position: relative;
   box-sizing: border-box;
+  min-height: 280px;
+  padding-bottom: 110px;
 }
 
 .image-toolbar-card {
