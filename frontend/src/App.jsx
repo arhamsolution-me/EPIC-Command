@@ -2926,17 +2926,6 @@ function MainApp() {
             <div style={{ padding: '22px' }}>
               {nvrAddMode === 'edge_agent' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Informational Banner */}
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534', fontWeight: 600, fontSize: '0.88rem' }}>
-                      <Terminal size={16} color="#059669" />
-                      Zero-VPN Remote Branch Deployment
-                    </div>
-                    <p style={{ color: '#15803d', fontSize: '0.80rem', margin: '4px 0 0', lineHeight: 1.4 }}>
-                      Deploy the Edge Agent on any Windows PC at the branch office. It will open Command Prompt (CMD), ask for the local NVR IP, and securely stream live without router port forwarding or VPN.
-                    </p>
-                  </div>
-
                   {/* Assign to Agent Selector */}
                   <div>
                     <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
@@ -2965,115 +2954,82 @@ function MainApp() {
                     const activeAgent = agents.find((a) => String(a.id) === String(!user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId)) || agents[0];
                     const activeAgentName = activeAgent?.name || 'Branch';
                     const activeAgentId = activeAgent?.id || 1;
-                    const serverOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://192.168.1.101';
-                    const quickCmd = `curl -s -O ${serverOrigin}/epic-agent.py && python epic-agent.py --server "${serverOrigin}" --agent "${activeAgentName}"`;
 
                     return (
                       <>
-                        {/* Option 1: 1-Click Launcher Download */}
-                        <div style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
-                          <div style={{ fontSize: '0.86rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
-                            Option 1: 1-Click Windows Launcher (Recommended)
-                          </div>
-                          <p style={{ color: '#64748b', fontSize: '0.78rem', margin: '0 0 12px' }}>
-                            Download and double-click this launcher on any Windows PC on the branch network. It will open CMD and configure the NVR connection automatically.
-                          </p>
-                          <a
-                            href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.bat`}
-                            download={`launch-agent-${activeAgentName}.bat`}
-                            className="btn btn-primary"
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              textDecoration: 'none',
-                              padding: '10px 18px',
-                              fontSize: '0.86rem',
-                              fontWeight: 600,
-                              background: '#059669',
-                              color: '#ffffff',
-                              borderRadius: '6px'
-                            }}
-                          >
-                            <Download size={16} />
-                            Download Launcher ({`launch-agent-${activeAgentName}.bat`})
-                          </a>
-                        </div>
-
-                        {/* Option 2: Quick Command for CMD */}
-                        <div style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
-                          <div style={{ fontSize: '0.86rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
-                            Option 2: Run via Command Prompt (CMD)
-                          </div>
-                          <p style={{ color: '#64748b', fontSize: '0.78rem', margin: '0 0 8px' }}>
-                            Open Command Prompt (CMD) on the branch PC and paste this command:
-                          </p>
-                          <div style={{ background: '#0f172a', borderRadius: '6px', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                            <code style={{ color: '#38bdf8', fontSize: '0.78rem', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                              {quickCmd}
-                            </code>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(quickCmd);
-                                setEdgeCopied(true);
-                                setTimeout(() => setEdgeCopied(false), 2000);
-                              }}
+                        {/* Download Launcher */}
+                        <div>
+                          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <a
+                              href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.bat`}
+                              download={`launch-agent-${activeAgentName}.bat`}
+                              className="btn btn-primary"
                               style={{
-                                background: edgeCopied ? '#059669' : '#334155',
-                                border: 'none',
-                                color: '#ffffff',
-                                padding: '6px 12px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '6px',
-                                flexShrink: 0
+                                gap: '8px',
+                                textDecoration: 'none',
+                                padding: '11px 20px',
+                                fontSize: '0.88rem',
+                                fontWeight: 600,
+                                background: '#059669',
+                                color: '#ffffff',
+                                borderRadius: '6px'
                               }}
                             >
-                              {edgeCopied ? <Check size={14} /> : <Copy size={14} />}
-                              {edgeCopied ? 'Copied!' : 'Copy Command'}
-                            </button>
+                              <Download size={16} />
+                              Download Launcher (Windows .bat)
+                            </a>
+                            <a
+                              href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.sh`}
+                              download={`launch-agent-${activeAgentName}.sh`}
+                              className="btn btn-secondary"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                textDecoration: 'none',
+                                padding: '11px 20px',
+                                fontSize: '0.88rem',
+                                fontWeight: 600,
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <Download size={16} />
+                              Download Launcher (Linux .sh)
+                            </a>
                           </div>
                         </div>
 
                         {/* Real-time Connection Radar */}
                         {agentDeployStatus?.has_nvr ? (
-                          <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px', padding: '16px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <CheckCircle2 size={26} color="#059669" />
-                              <div style={{ flex: 1 }}>
-                                <h4 style={{ color: '#065f46', fontWeight: 700, margin: 0, fontSize: '0.94rem' }}>
-                                  Edge Agent Connected & Streaming Live!
-                                </h4>
-                                <p style={{ color: '#047857', margin: '3px 0 0', fontSize: '0.80rem' }}>
-                                  Agent "{agentDeployStatus.name}" has {agentDeployStatus.nvr_count} NVR and {agentDeployStatus.total_cameras} Cameras online.
-                                </p>
+                          <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <CheckCircle2 size={22} color="#059669" />
+                              <div>
+                                <div style={{ color: '#065f46', fontWeight: 700, fontSize: '0.90rem' }}>
+                                  Edge Agent Connected!
+                                </div>
+                                <div style={{ color: '#047857', fontSize: '0.78rem' }}>
+                                  {agentDeployStatus.name} • {agentDeployStatus.nvr_count} NVR ({agentDeployStatus.total_cameras} Cameras) Online
+                                </div>
                               </div>
-                              <button
-                                type="button"
-                                className="btn btn-primary"
-                                onClick={handleCloseModal}
-                                style={{ background: '#059669', padding: '8px 16px', fontSize: '0.84rem' }}
-                              >
-                                Done & View Live
-                              </button>
                             </div>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={handleCloseModal}
+                              style={{ background: '#059669', padding: '7px 14px', fontSize: '0.82rem' }}
+                            >
+                              Done & View Live
+                            </button>
                           </div>
                         ) : (
-                          <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span className="spinner" style={{ fontSize: '18px' }}>⏳</span>
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: '0.84rem', color: '#1e293b' }}>
-                                Waiting for Edge Agent to connect from branch PC...
-                              </div>
-                              <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '2px' }}>
-                                Once the launcher is run on the branch PC and NVR IP is entered in CMD, this card will automatically turn green!
-                              </div>
-                            </div>
+                            <span style={{ fontWeight: 600, fontSize: '0.86rem', color: '#334155' }}>
+                              Waiting...
+                            </span>
                           </div>
                         )}
                       </>

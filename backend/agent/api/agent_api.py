@@ -217,21 +217,27 @@ echo Branch Agent   : {agent.name}
 echo Central Server : {server_url}
 echo.
 echo [1/3] Checking Python installation on your PC...
+set PYCMD=python
 where python >nul 2>nul
 if %errorlevel% neq 0 (
-    echo.
-    echo [!] Python is not installed or not in PATH!
-    echo [*] Opening official Python download...
-    powershell -Command "Start-Process 'https://www.python.org/downloads/'"
-    echo.
-    echo Please install Python (make sure to check 'Add python.exe to PATH')
-    echo and double-click this launcher again!
-    echo.
-    pause
-    exit /b 1
+    where py >nul 2>nul
+    if %errorlevel% equ 0 (
+        set PYCMD=py
+    ) else (
+        echo.
+        echo [!] Python is not installed or not in PATH!
+        echo [*] Opening official Python download...
+        powershell -Command "Start-Process 'https://www.python.org/downloads/'"
+        echo.
+        echo Please install Python (make sure to check 'Add python.exe to PATH')
+        echo and double-click this launcher again!
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
-echo [✓] Python is available.
+echo [✓] Python runtime detected (%PYCMD%).
 echo.
 echo [2/3] Downloading latest Edge Agent from Central Server...
 curl -s -O {server_url}/epic-agent.py
@@ -246,6 +252,7 @@ if not exist epic-agent.py (
     echo.
     echo [!] Could not download epic-agent.py from {server_url}.
     echo Please verify that this PC can reach {server_url}.
+    echo.
     pause
     exit /b 1
 )
@@ -254,7 +261,11 @@ echo [✓] Edge Agent downloaded.
 echo.
 echo [3/3] Launching Edge Agent for Branch '{agent.name}'...
 echo.
-python epic-agent.py --server "{server_url}" --agent "{agent.name}"
+%PYCMD% epic-agent.py --server "{server_url}" --agent "{agent.name}"
+echo.
+echo =================================================================
+echo Edge Agent has exited.
+echo =================================================================
 pause
 """
     clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', agent.name)
@@ -264,4 +275,71 @@ pause
         media_type="application/x-bat",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+@router.get("/{agent_id}/launcher.sh")
+def download_agent_launcher_linux(agent_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Generate and serve a customized 1-Click Linux shell launcher (.sh) for this Agent.
+    """
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+
+    host_header = request.headers.get("x-forwarded-host") or request.headers.get("host") or "192.168.1.101"
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
+    server_url = f"{proto}://{host_header}".rstrip("/")
+
+    sh_content = f"""#!/bin/bash
+clear
+echo "================================================================="
+echo "      EPIC COMMAND - EDGE SURVEILLANCE AGENT LAUNCHER"
+echo "      Zero-VPN | Zero-NAT Port Forwarding | True Multi-Branch"
+echo "================================================================="
+echo ""
+echo "Branch Agent   : {agent.name}"
+echo "Central Server : {server_url}"
+echo ""
+
+echo "[1/3] Checking Python installation on this Linux machine..."
+PYCMD=""
+if command -v python3 &>/dev/null; then
+    PYCMD="python3"
+elif command -v python &>/dev/null; then
+    PYCMD="python"
+else
+    echo "[!] Python is not installed!"
+    echo "Install via: sudo apt update && sudo apt install -y python3"
+    echo ""
+    read -p "Press Enter to exit..."
+    exit 1
+fi
+
+echo "[✓] Python runtime detected ($PYCMD)."
+echo ""
+echo "[2/3] Downloading latest Edge Agent from Central Server..."
+curl -s -O {server_url}/epic-agent.py || wget -q -O epic-agent.py {server_url}/epic-agent.py
+if [ ! -f "epic-agent.py" ]; then
+    echo "[!] Could not download epic-agent.py from {server_url}."
+    echo ""
+    read -p "Press Enter to exit..."
+    exit 1
+fi
+
+echo "[✓] Edge Agent downloaded."
+echo ""
+echo "[3/3] Launching Edge Agent for Branch '{agent.name}'..."
+echo ""
+$PYCMD epic-agent.py --server "{server_url}" --agent "{agent.name}"
+echo ""
+read -p "Press Enter to close this terminal..."
+"""
+    clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', agent.name)
+    filename = f"launch-agent-{clean_name}.sh"
+    return Response(
+        content=sh_content.encode("utf-8"),
+        media_type="application/x-sh",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
 

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-EPIC Command - Standalone Edge Agent
-===================================
-Enables zero-VPN, zero-NAT port forwarding CCTV integration.
-Runs locally at any branch office or store network (e.g. Islamabad),
-discovers local NVRs/cameras (e.g. 200.0.0.25), and registers & bridges
-streams directly to the Central EPIC Command Server (e.g. Lahore).
+EPIC Command - Standalone Edge Surveillance Agent v3.0
+======================================================
+Zero-VPN | Zero-NAT Port Forwarding | True Multi-Branch | Cross-Platform
+
+Compatible with Windows 10/11, Windows Server, Ubuntu, Debian, CentOS, macOS.
+Uses 100% Python Standard Library — Zero pip installs needed!
 
 Usage:
     python epic-agent.py
-    python epic-agent.py --server http://192.168.1.101 --agent "MM Alam" --nvr 200.0.0.25 --user admin --pass "admin@mm@store@123"
+    python epic-agent.py --server http://192.168.1.101 --agent "MM Alam"
+    python epic-agent.py --server http://192.168.1.101 --agent "MM Alam" --nvr 200.0.0.25 --user admin --pass "admin123"
 """
 
 import sys
@@ -18,11 +19,77 @@ import time
 import json
 import socket
 import re
+import platform
 import urllib.parse
 import urllib.request
 import threading
 import argparse
 from typing import Dict, Any, List, Optional
+
+
+def setup_console():
+    """Enable ANSI colors on Windows 10+ consoles."""
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+        except Exception:
+            pass
+
+
+setup_console()
+
+# Color Codes
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+CYAN = "\033[96m"
+WHITE = "\033[97m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+
+def check_environment() -> bool:
+    """Verify Python version and standard library dependencies."""
+    print("=" * 65)
+    print("      EPIC COMMAND - EDGE SURVEILLANCE AGENT v3.0")
+    print("      Zero-VPN | Zero-NAT Port Forwarding | True Multi-Branch")
+    print("=" * 65)
+    print(f"[*] Operating System : {platform.system()} {platform.release()} ({platform.machine()})")
+    print(f"[*] Python Runtime   : {platform.python_version()} ({sys.executable})")
+
+    if sys.version_info < (3, 7):
+        print(f"\n{RED}[!] ERROR: Python 3.7 or newer is required.{RESET}")
+        print(f"    Current detected version: {platform.python_version()}")
+        print("    Please install Python 3.8+ from: https://www.python.org/downloads/")
+        return False
+
+    modules = [
+        ("urllib.request", "HTTP Client Engine"),
+        ("urllib.parse", "URL & Credential Parser"),
+        ("socket", "TCP Stream Sockets"),
+        ("threading", "Concurrent Stream Workers"),
+        ("json", "JSON Serialization"),
+        ("argparse", "CLI Parameter Parser")
+    ]
+
+    print("\n[*] Checking Python core packages:")
+    all_ok = True
+    for mod_name, desc in modules:
+        try:
+            __import__(mod_name)
+            print(f"  {GREEN}[✓]{RESET} {desc} ({mod_name}): Available")
+        except ImportError as e:
+            print(f"  {RED}[✗]{RESET} Missing module {mod_name}: {e}")
+            all_ok = False
+
+    if not all_ok:
+        print(f"\n{RED}[!] Missing standard Python libraries.{RESET}")
+        return False
+
+    print(f"  {GREEN}[✓]{RESET} All required packages verified. Zero pip packages required!")
+    return True
 
 
 def check_tcp_port(ip: str, port: int, timeout: float = 1.5) -> bool:
@@ -42,7 +109,7 @@ def test_rtsp_describe(ip: str, port: int, path: str, username: str = "", passwo
             s.settimeout(timeout)
             s.connect((ip, port))
             url = f"rtsp://{ip}:{port}{path}"
-            headers = f"DESCRIBE {url} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: EPIC-Edge-Agent/2.0\r\nAccept: application/sdp\r\n"
+            headers = f"DESCRIBE {url} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: EPIC-Edge-Agent/3.0\r\nAccept: application/sdp\r\n"
             if username and password:
                 import base64
                 creds = base64.b64encode(f"{username}:{password}".encode()).decode()
@@ -68,7 +135,7 @@ def probe_local_nvr(
     max_channels: int = 32
 ) -> Dict[str, Any]:
     """Discover cameras locally from this machine."""
-    print(f"\n[1/3] Probing NVR at {ip} locally from this network...")
+    print(f"\n{BOLD}[1/3] Probing NVR at {ip} locally from this network...{RESET}")
 
     user_enc = urllib.parse.quote(username, safe="")
     pass_enc = urllib.parse.quote(password, safe="")
@@ -95,20 +162,22 @@ def probe_local_nvr(
     detected_rtsp_port = detected_rtsp_port or 554
     detected_http_port = detected_http_port or 80
 
-    print(f"      Target HTTP Port : {detected_http_port} (Status: {'OPEN' if check_tcp_port(ip, detected_http_port) else 'CLOSED'})")
-    print(f"      Target RTSP Port : {detected_rtsp_port} (Status: {'OPEN' if check_tcp_port(ip, detected_rtsp_port) else 'CLOSED'})")
+    http_ok = check_tcp_port(ip, detected_http_port)
+    rtsp_ok = check_tcp_port(ip, detected_rtsp_port)
+    print(f"      Target HTTP Port : {detected_http_port} (Status: {'OPEN' if http_ok else 'CLOSED'})")
+    print(f"      Target RTSP Port : {detected_rtsp_port} (Status: {'OPEN' if rtsp_ok else 'CLOSED'})")
 
     cameras: List[Dict[str, Any]] = []
     vendor = "DAHUA"
 
-    # Dahua Channel Discovery
+    # Dahua Channel Discovery via CGI
     try:
         dahua_url = f"http://{ip}:{detected_http_port}/cgi-bin/configManager.cgi?action=getConfig&name=ChannelTitle"
         passman = urllib.request.HTTPPasswordMgrWithDefaultRealm()
         passman.add_password(None, dahua_url, username, password)
         authhandler = urllib.request.HTTPDigestAuthHandler(passman)
         opener = urllib.request.build_opener(authhandler)
-        req = urllib.request.Request(dahua_url, headers={"User-Agent": "EPIC-Edge-Agent/2.0"})
+        req = urllib.request.Request(dahua_url, headers={"User-Agent": "EPIC-Edge-Agent/3.0"})
         with opener.open(req, timeout=3.0) as resp:
             content = resp.read().decode("utf-8", errors="ignore")
             if "table.ChannelTitle" in content:
@@ -162,7 +231,6 @@ def probe_local_nvr(
 
     # If Dahua channels were verified
     if not cameras:
-        # Default fallback for verified NVR port
         for ch in range(1, 9):
             cameras.append({
                 "channel_number": ch,
@@ -173,7 +241,7 @@ def probe_local_nvr(
                 "is_ptz": False
             })
 
-    print(f"      Found {len(cameras)} cameras ({vendor}) on NVR!")
+    print(f"      {GREEN}[✓]{RESET} Found {len(cameras)} cameras ({vendor}) on NVR!")
     return {
         "reachable": True,
         "ip": ip,
@@ -200,10 +268,10 @@ def remap_url_to_bridge(url: str, bridge_ip: str, bridge_port: int = 554) -> str
         return url
 
 
-def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dict[str, Any], bridge_ip: str) -> bool:
+def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dict[str, Any], bridge_ip: str, bridge_port: int = 554) -> bool:
     """Register Agent, NVR, and cameras with Central EPIC Command backend."""
     server_url = server_url.rstrip("/")
-    print(f"\n[2/3] Registering with Central Server at {server_url} (Bridge IP: {bridge_ip})...")
+    print(f"\n{BOLD}[2/3] Registering with Central Server at {server_url} (Bridge IP: {bridge_ip}:{bridge_port})...{RESET}")
 
     # Step A: Enroll Agent
     enroll_url = f"{server_url}/api/agent/create"
@@ -214,18 +282,17 @@ def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dic
         with urllib.request.urlopen(req, timeout=5.0) as resp:
             res_data = json.loads(resp.read().decode())
             agent_id = res_data.get("agent", {}).get("id")
-            print(f"      [✓] Agent '{agent_name}' registered (ID: {agent_id})")
+            print(f"      {GREEN}[✓]{RESET} Agent '{agent_name}' registered (ID: {agent_id})")
     except Exception:
-        # Agent might already exist, fetch agents list
         try:
             list_url = f"{server_url}/api/agent/list"
             req = urllib.request.Request(list_url)
             with urllib.request.urlopen(req, timeout=5.0) as resp:
                 res_data = json.loads(resp.read().decode())
                 for ag in res_data.get("agents", []):
-                    if ag.get("name", "").lower() == agent_name.lower():
+                    if ag.get("name", "").strip().lower() == agent_name.strip().lower():
                         agent_id = ag.get("id")
-                        print(f"      [✓] Linked to existing Agent '{agent_name}' (ID: {agent_id})")
+                        print(f"      {GREEN}[✓]{RESET} Linked to existing Agent '{agent_name}' (ID: {agent_id})")
                         break
         except Exception:
             pass
@@ -234,9 +301,9 @@ def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dic
     bridged_cameras = []
     for c in nvr_info["cameras"]:
         cam_copy = dict(c)
-        cam_copy["rtsp_stream_url"] = remap_url_to_bridge(c.get("rtsp_stream_url", ""), bridge_ip, 554)
+        cam_copy["rtsp_stream_url"] = remap_url_to_bridge(c.get("rtsp_stream_url", ""), bridge_ip, bridge_port)
         if c.get("sub_stream_url"):
-            cam_copy["sub_stream_url"] = remap_url_to_bridge(c.get("sub_stream_url", ""), bridge_ip, 554)
+            cam_copy["sub_stream_url"] = remap_url_to_bridge(c.get("sub_stream_url", ""), bridge_ip, bridge_port)
         bridged_cameras.append(cam_copy)
 
     # Step B: Register NVR and Cameras
@@ -246,7 +313,7 @@ def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dic
         "name": f"{agent_name} NVR",
         "ip": bridge_ip,
         "port": nvr_info["port"],
-        "rtsp_port": 554,
+        "rtsp_port": bridge_port,
         "username": "admin",
         "password": "",
         "status": "online",
@@ -257,12 +324,12 @@ def register_with_central_server(server_url: str, agent_name: str, nvr_info: Dic
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(confirm_url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
-            res_data = json.loads(resp.read().decode())
-            print(f"      [✓] NVR and {len(bridged_cameras)} Cameras routed through Bridge IP ({bridge_ip})!")
+        with urllib.request.urlopen(req, timeout=8.0) as resp:
+            json.loads(resp.read().decode())
+            print(f"      {GREEN}[✓]{RESET} NVR and {len(bridged_cameras)} Cameras routed through Bridge IP ({bridge_ip}:{bridge_port})!")
             return True
     except Exception as e:
-        print(f"      [!] Registration notice: {e}")
+        print(f"      {YELLOW}[!]{RESET} Registration notice: {e}")
         return False
 
 
@@ -293,8 +360,8 @@ def start_rtsp_tcp_bridge(local_port: int, target_host: str, target_port: int):
             server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server_sock.bind(("0.0.0.0", local_port))
             server_sock.listen(50)
-            print(f"\n[3/3] RTSP Stream Bridge active on local port {local_port} ➔ {target_host}:{target_port}")
-            print("      Edge Agent is streaming live! (Press Ctrl+C to stop)\n")
+            print(f"\n{BOLD}[3/3] RTSP Stream Bridge active on local port {local_port} ➔ {target_host}:{target_port}{RESET}")
+            print(f"      {GREEN}Edge Agent is streaming live!{RESET} (Press Ctrl+C to stop)\n")
 
             while True:
                 client_sock, client_addr = server_sock.accept()
@@ -309,16 +376,19 @@ def start_rtsp_tcp_bridge(local_port: int, target_host: str, target_port: int):
                     t1.start()
                     t2.start()
                 except Exception as ex:
-                    print(f"      [!] Stream connection notice: {ex}")
+                    print(f"      {YELLOW}[!]{RESET} Stream connection notice: {ex}")
                     client_sock.close()
         except Exception as e:
-            print(f"[!] Stream bridge notice: {e}")
+            print(f"{RED}[!] Stream bridge error: {e}{RESET}")
 
     thread = threading.Thread(target=bridge_listener, daemon=True)
     thread.start()
 
 
 def main():
+    if not check_environment():
+        return
+
     parser = argparse.ArgumentParser(description="EPIC Command Edge Agent - Zero-VPN Zero-NAT CCTV Bridge")
     parser.add_argument("--server", help="Central EPIC Command server URL (e.g. http://192.168.1.101)")
     parser.add_argument("--agent", help="Agent Name (e.g. 'MM Alam' or 'Islamabad Branch')")
@@ -330,16 +400,12 @@ def main():
     parser.add_argument("--rtsp-port", type=int, default=None, help="NVR RTSP Port (default: 554)")
     args = parser.parse_args()
 
-    print("=" * 65)
-    print("      EPIC COMMAND - EDGE SURVEILLANCE AGENT v2.0")
-    print("      Zero-VPN | Zero-NAT Port Forwarding | True Multi-Branch")
-    print("=" * 65)
-
+    print()
     server_url = args.server or input("Enter Central Server URL [http://192.168.1.101]: ").strip() or "http://192.168.1.101"
     agent_name = args.agent or input("Enter Agent / Branch Name [MM Alam]: ").strip() or "MM Alam"
 
-    print(f"\n      Branch Agent   : {agent_name}")
-    print(f"      Central Server : {server_url}")
+    print(f"\n      Branch Agent   : {BOLD}{agent_name}{RESET}")
+    print(f"      Central Server : {CYAN}{server_url}{RESET}")
     print("-" * 65)
     print("      LOCAL NVR SETUP (Please enter your local branch NVR details)")
     print("-" * 65)
@@ -378,18 +444,34 @@ def main():
     print(f"      Active Edge Bridge IP : {bridge_ip}")
 
     # 2. Register to Central Server
-    register_with_central_server(server_url, agent_name, nvr_info, bridge_ip)
+    register_with_central_server(server_url, agent_name, nvr_info, bridge_ip, 554)
 
     # 3. Start Stream Bridge
-    start_rtsp_tcp_bridge(554, nvr_ip, rtsp_port)
+    actual_rtsp_port = nvr_info.get("rtsp_port") or rtsp_port or 554
+    start_rtsp_tcp_bridge(554, nvr_ip, actual_rtsp_port)
 
     # 4. Keep alive loop
     try:
         while True:
             time.sleep(30)
     except KeyboardInterrupt:
-        print("\nEdge Agent stopped.")
+        print(f"\n{YELLOW}Edge Agent stopped by user.{RESET}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(f"\n{YELLOW}Edge Agent stopped.{RESET}")
+    except Exception as e:
+        print(f"\n{RED}[!] Error: {e}{RESET}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        print("\n" + "=" * 65)
+        print("Edge Agent execution finished.")
+        print("=" * 65)
+        try:
+            input("Press Enter to close this window . . . ")
+        except Exception:
+            pass
