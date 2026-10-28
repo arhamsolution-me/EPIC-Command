@@ -187,7 +187,7 @@ function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
 }
 
 function MainApp() {
-  const { user, isAuthenticated, isLoading, logout, hasPermission } = useAuth();
+  const { user, isAuthenticated, isLoading, logout, hasPermission, refreshProfile } = useAuth();
 
   // Page caching: persist active tab across page refreshes
   const [activeNav, setActiveNav] = useState(() => {
@@ -337,7 +337,7 @@ function MainApp() {
             setAgentDeployStatus(data);
             if (data.has_nvr) {
               fetchNvrs();
-              fetchCameras();
+              fetchAgents();
             }
           }
         } catch (_) {}
@@ -429,13 +429,45 @@ function MainApp() {
     sites: []
   });
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        fetchAgents(),
+        fetchNvrs(),
+        fetchLocationsSummary(),
+        refreshProfile ? refreshProfile() : Promise.resolve()
+      ]);
+    } catch (err) {
+      console.warn('Manual refresh error:', err);
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
+
+  // Auto-fetch fresh data when switching tabs
   useEffect(() => {
     if (isAuthenticated) {
       fetchAgents();
       fetchNvrs();
       fetchLocationsSummary();
+      if (refreshProfile) refreshProfile();
     }
-  }, [isAuthenticated]);
+  }, [activeNav, isAuthenticated]);
+
+  // Periodic background auto-sync every 8 seconds (Zero F5 needed)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const syncInterval = setInterval(() => {
+      if (!isScanning && !isSaving && !isModalOpen && !isAgentModalOpen) {
+        fetchNvrs();
+        fetchAgents();
+      }
+    }, 8000);
+    return () => clearInterval(syncInterval);
+  }, [isAuthenticated, isScanning, isSaving, isModalOpen, isAgentModalOpen]);
 
   const fetchLocationsSummary = async () => {
     try {
@@ -861,17 +893,16 @@ function MainApp() {
 
   useEffect(() => {
     if (!selectedPtzCamId && allCameras.length > 0) {
-      const firstPtz = allCameras.find((c) => c.is_ptz) || allCameras[0];
-      if (firstPtz) {
-        setSelectedPtzCamId(firstPtz.id);
-        setIsPtzOpen(Boolean(firstPtz.is_ptz));
+      const firstCam = allCameras.find((c) => c.is_ptz) || allCameras[0];
+      if (firstCam) {
+        setSelectedPtzCamId(firstCam.id);
       }
     }
   }, [allCameras, selectedPtzCamId]);
 
   // PTZ continuous & step control function
   const sendPtzCommand = async (action, overrideParams = {}) => {
-    if (!selectedPtzCam || !selectedPtzCam.is_ptz) return;
+    if (!selectedPtzCam) return;
 
     if (ptzSafetyTimerRef.current) {
       clearTimeout(ptzSafetyTimerRef.current);
@@ -886,7 +917,7 @@ function MainApp() {
         speed: ptzSpeed,
         ...overrideParams
       };
-      await fetch(`${API_BASE_URL}/api/ptz/control/${selectedPtzCam.id}`, {
+      await apiRequest(`/api/ptz/control/${selectedPtzCam.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1002,7 +1033,7 @@ function MainApp() {
     setIsSavingPreset(true);
     setSavePresetFeedback(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/ptz/presets/${selectedPtzCam.id}/set`, {
+      const res = await apiRequest(`/api/ptz/presets/${selectedPtzCam.id}/set`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preset_id: activePreset, name: `Preset ${activePreset}` })
@@ -1022,7 +1053,7 @@ function MainApp() {
     if (!selectedPtzCam) return;
     setActivePreset(presetId);
     try {
-      await fetch(`${API_BASE_URL}/api/ptz/presets/${selectedPtzCam.id}/goto`, {
+      await apiRequest(`/api/ptz/presets/${selectedPtzCam.id}/goto`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preset_id: presetId })
@@ -1034,8 +1065,8 @@ function MainApp() {
 
   // Fetch presets when selected camera changes
   useEffect(() => {
-    if (selectedPtzCam && selectedPtzCam.is_ptz) {
-      fetch(`${API_BASE_URL}/api/ptz/presets/${selectedPtzCam.id}`)
+    if (selectedPtzCam?.id && hasPermission('CAM_PTZ_CONTROL')) {
+      apiRequest(`/api/ptz/presets/${selectedPtzCam.id}`)
         .then((res) => res.json())
         .then((data) => {
           setPtzPresets(data.presets || []);
@@ -1044,28 +1075,20 @@ function MainApp() {
     }
   }, [selectedPtzCam?.id]);
 
-  // Click on camera tile: if PTZ supported, select and open; if not supported, auto-close PTZ
+  // Click on camera tile: select camera for PTZ (keep panel open if user opened it!)
   const handleCameraTileClick = (cam) => {
     setSelectedPtzCamId(cam.id);
-    if (cam.is_ptz) {
-      setIsPtzOpen(true);
-    } else {
-      setIsPtzOpen(false);
-    }
   };
 
+  // Toggle PTZ panel on / off reliably
   const handleTogglePtz = () => {
-    if (!isPtzOpen) {
-      if (!selectedPtzCam || !selectedPtzCam.is_ptz) {
-        const firstPtz = allCameras.find((c) => c.is_ptz);
-        if (firstPtz) {
-          setSelectedPtzCamId(firstPtz.id);
-        }
+    setIsPtzOpen((prev) => {
+      const next = !prev;
+      if (next && !selectedPtzCamId && allCameras.length > 0) {
+        setSelectedPtzCamId(allCameras[0].id);
       }
-      setIsPtzOpen(true);
-    } else {
-      setIsPtzOpen(false);
-    }
+      return next;
+    });
   };
 
   // Filtered cameras based on search and filters
@@ -1296,6 +1319,8 @@ function MainApp() {
           onOpenChangePassword={() => setActiveNav('change-password')}
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={handleToggleSidebar}
+          onRefresh={handleManualRefresh}
+          isRefreshing={isRefreshing}
         />
 
         <div className="main-page-body">
@@ -2581,8 +2606,8 @@ function MainApp() {
                       </div>
                     </div>
 
-                    {/* Right Side: PTZ Controller Panel (Rendered only when open, user has permission, and camera has PTZ) */}
-                    {isPtzOpen && hasPermission('CAM_PTZ_CONTROL') && selectedPtzCam && selectedPtzCam.is_ptz && (
+                    {/* Right Side: PTZ Controller Panel (Rendered when open and user has permission) */}
+                    {isPtzOpen && hasPermission('CAM_PTZ_CONTROL') && selectedPtzCam && (
                       <aside className="ptz-controller-panel">
                         {/* Header */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
@@ -2604,15 +2629,43 @@ function MainApp() {
                           </button>
                         </div>
 
-                        {/* Active Camera Card - ONLY Camera Name and Clean Status Badge */}
-                        <div className="ptz-camera-badge-card">
-                          <div className="ptz-camera-badge-left">
-                            <span className="pulse-dot"></span>
-                            <strong className="ptz-camera-badge-title">{selectedPtzCam.name}</strong>
+                        {/* Active Camera Card - Camera Selector & Status Badge */}
+                        <div className="ptz-camera-badge-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <div className="ptz-camera-badge-left">
+                              <span className="pulse-dot"></span>
+                              <strong className="ptz-camera-badge-title">{selectedPtzCam.name}</strong>
+                            </div>
+                            <span className="ptz-camera-badge-tag">
+                              {selectedPtzCam.is_ptz ? 'PTZ ACTIVE' : 'PTZ READY'}
+                            </span>
                           </div>
-                          <span className="ptz-camera-badge-tag">
-                            PTZ ACTIVE
-                          </span>
+                          {allCameras.length > 1 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+                              <CameraIcon size={13} color="#64748b" />
+                              <select
+                                value={selectedPtzCam.id}
+                                onChange={(e) => setSelectedPtzCamId(Number(e.target.value))}
+                                style={{
+                                  flex: 1,
+                                  fontSize: '0.78rem',
+                                  padding: '4px 8px',
+                                  borderRadius: '5px',
+                                  border: '1px solid #cbd5e1',
+                                  background: '#ffffff',
+                                  color: '#0f172a',
+                                  fontWeight: 500,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {allCameras.map((cam) => (
+                                  <option key={cam.id} value={cam.id}>
+                                    {cam.name} (Ch {cam.channel_number})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </div>
 
                         {/* Section: Pan/Tilt Speed Velocity Slider */}

@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { LogOut, User as UserIcon, ChevronDown, ChevronUp, KeyRound } from 'lucide-react';
+import { LogOut, User as UserIcon, ChevronDown, ChevronUp, KeyRound, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export default function TopHeader({
   activeNav,
   onOpenChangePassword = () => { },
   isSidebarOpen = true,
-  onToggleSidebar = () => { }
+  onToggleSidebar = () => { },
+  onRefresh = () => { },
+  isRefreshing = false
 }) {
   const { user, logout } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -70,11 +72,51 @@ export default function TopHeader({
         </h1>
       </div>
 
-      {/* Right: User Profile Group matching user screenshot Image 1 */}
-      <div
-        ref={dropdownRef}
-        style={{ position: 'relative' }}
-      >
+      {/* Right Controls: Sync Button + User Profile Group */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isRefreshing}
+          title="Auto-Sync active (Click to refresh data immediately)"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: isRefreshing ? '#ecfdf5' : '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            padding: '6px 12px',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            color: isRefreshing ? '#059669' : '#475569',
+            cursor: isRefreshing ? 'wait' : 'pointer',
+            transition: 'all 0.15s ease',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+          }}
+          onMouseEnter={(e) => {
+            if (!isRefreshing) {
+              e.currentTarget.style.borderColor = '#10b981';
+              e.currentTarget.style.color = '#059669';
+              e.currentTarget.style.background = '#f0fdf4';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isRefreshing) {
+              e.currentTarget.style.borderColor = '#e2e8f0';
+              e.currentTarget.style.color = '#475569';
+              e.currentTarget.style.background = '#ffffff';
+            }
+          }}
+        >
+          <RefreshCw size={13} className={isRefreshing ? 'spin-icon' : ''} color={isRefreshing ? '#059669' : '#64748b'} />
+          <span>{isRefreshing ? 'Syncing...' : 'Sync'}</span>
+        </button>
+
+        <div
+          ref={dropdownRef}
+          style={{ position: 'relative' }}
+        >
         <div
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           title="User Account Options"
@@ -238,6 +280,7 @@ export default function TopHeader({
             </button>
           </div>
         )}
+      </div>
       </div>
     </header>
   );
