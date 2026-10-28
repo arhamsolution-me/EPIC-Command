@@ -491,9 +491,7 @@ def probe_local_nvr(
             "error": f"Host {ip} is unreachable or all network ports are closed."
         }
 
-    # If only one port found, assign it safely
-    detected_http_port = detected_http_port or (80 if check_tcp_port(ip, 80, 0.5) else None)
-    detected_rtsp_port = detected_rtsp_port or (554 if check_tcp_port(ip, 554, 0.5) else None)
+
 
     print(f"      Target HTTP Port : {detected_http_port}")
     print(f"      Target RTSP Port : {detected_rtsp_port}")

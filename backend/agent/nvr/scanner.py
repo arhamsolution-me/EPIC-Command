@@ -351,8 +351,7 @@ def probe_nvr(
             "cameras": []
         }
 
-    detected_http_port = detected_http_port or (80 if check_tcp_port(ip, 80, 0.5) else None)
-    detected_rtsp_port = detected_rtsp_port or (554 if check_tcp_port(ip, 554, 0.5) else None)
+
 
     vendor = "generic"
     candidate_cameras: List[Dict[str, Any]] = []
