@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import bcrypt
@@ -7,7 +8,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("JWT_SECRET", "epic-command-secure-jwt-key-2026-super-admin-rbac")
+_raw_secret = os.getenv("JWT_SECRET", "")
+
+# F-05: Fail closed if JWT_SECRET is absent or below 32-char entropy threshold
+if not _raw_secret or len(_raw_secret) < 32:
+    print(
+        "[SECURITY] FATAL: JWT_SECRET is not set or is below the minimum 32-character "
+        "entropy threshold. Set a strong JWT_SECRET in your .env file and restart. "
+        "Refusing to start.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+SECRET_KEY = _raw_secret
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24)))  # 24 hours
 

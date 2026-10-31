@@ -1,13 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('epic_token'));
+  const [token, setToken] = useState(() => sessionStorage.getItem('epic_token'));
   const [user, setUser] = useState(() => {
     try {
-      const saved = localStorage.getItem('epic_user');
+      const saved = sessionStorage.getItem('epic_user');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -23,15 +23,15 @@ export function AuthProvider({ children }) {
     } catch {
       // Ignore network errors on logout
     } finally {
-      localStorage.removeItem('epic_token');
-      localStorage.removeItem('epic_user');
+      sessionStorage.removeItem('epic_token');
+      sessionStorage.removeItem('epic_user');
       setToken(null);
       setUser(null);
     }
   }, [token]);
 
   const refreshProfile = useCallback(async () => {
-    const currentToken = localStorage.getItem('epic_token');
+    const currentToken = sessionStorage.getItem('epic_token');
     if (!currentToken) {
       setUser(null);
       setIsLoading(false);
@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
         const data = await res.json();
         if (data.user) {
           setUser(data.user);
-          localStorage.setItem('epic_user', JSON.stringify(data.user));
+          sessionStorage.setItem('epic_user', JSON.stringify(data.user));
         }
       } else if (res.status === 401 || res.status === 403) {
         logout();
@@ -118,8 +118,8 @@ export function AuthProvider({ children }) {
       throw new Error(data.detail || 'Login failed. Please check credentials.');
     }
     const data = await res.json();
-    localStorage.setItem('epic_token', data.token);
-    localStorage.setItem('epic_user', JSON.stringify(data.user));
+    sessionStorage.setItem('epic_token', data.token);
+    sessionStorage.setItem('epic_user', JSON.stringify(data.user));
     setToken(data.token);
     setUser(data.user);
     return data.user;

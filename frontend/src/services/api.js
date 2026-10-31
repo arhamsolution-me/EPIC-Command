@@ -1,4 +1,4 @@
-const getApiBaseUrl = () => {
+﻿const getApiBaseUrl = () => {
   const envVal = import.meta.env.VITE_API_BASE_URL;
   if (envVal !== undefined && envVal !== null && envVal !== '') {
     return envVal;
@@ -28,7 +28,7 @@ export const API_BASE_URL = getApiBaseUrl();
 export const WEBRTC_STREAM_BASE = getWebrtcStreamBase();
 
 export async function apiRequest(endpoint, options = {}) {
-  const token = localStorage.getItem('epic_token');
+  const token = sessionStorage.getItem('epic_token');
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
@@ -47,8 +47,8 @@ export async function apiRequest(endpoint, options = {}) {
 
   if (response.status === 401) {
     // Session expired or invalid
-    localStorage.removeItem('epic_token');
-    localStorage.removeItem('epic_user');
+    sessionStorage.removeItem('epic_token');
+    sessionStorage.removeItem('epic_user');
     window.dispatchEvent(new Event('epic_auth_expired'));
   }
 

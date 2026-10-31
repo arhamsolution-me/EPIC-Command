@@ -1,21 +1,39 @@
+import ipaddress
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-# Import database and models
 try:
     from backend.database import get_db
     from backend.models import Agent, NVR, Camera
     from backend.agent.nvr.scanner import probe_nvr
     from backend.media.manager import media_manager
+    from backend.auth.dependencies import get_current_user, require_superadmin
+    from backend.models import User
 except ImportError:
     from database import get_db
     from models import Agent, NVR, Camera
     from agent.nvr.scanner import probe_nvr
     from media.manager import media_manager
+    from auth.dependencies import get_current_user, require_superadmin
+    from models import User
 
 router = APIRouter(prefix="/api/nvr", tags=["NVR"])
+
+
+def _validate_nvr_ip(ip: str) -> str:
+    """F-11: Reject loopback, link-local, multicast, and unspecified IP ranges to prevent SSRF."""
+    ip = (ip or "").strip()
+    if not ip:
+        raise HTTPException(status_code=400, detail="IP address is required.")
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid IP address: {ip}")
+    if addr.is_loopback or addr.is_link_local or addr.is_multicast or addr.is_unspecified:
+        raise HTTPException(status_code=400, detail="IP address is in a prohibited range.")
+    return ip
 
 
 class ProbeRequest(BaseModel):
@@ -53,18 +71,20 @@ class ConfirmNVRRequest(BaseModel):
 
 
 @router.post("/probe")
-def probe_nvr_endpoint(req: ProbeRequest):
+def probe_nvr_endpoint(
+    req: ProbeRequest,
+    current_user: User = Depends(require_superadmin),  # F-01 + F-11: SuperAdmin + IP validation
+):
     """
     Step 1: Check NVR reachability and auto-discover cameras & RTSP streams.
+    Requires Super Admin. IP validated against SSRF-prone ranges.
     """
-    if not req.ip or not req.username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="IP address and username are required."
-        )
+    validated_ip = _validate_nvr_ip(req.ip)
+    if not req.username:
+        raise HTTPException(status_code=400, detail="Username is required.")
 
     result = probe_nvr(
-        ip=req.ip,
+        ip=validated_ip,
         username=req.username,
         password=req.password or "",
         port=req.port,
@@ -81,12 +101,17 @@ def probe_nvr_endpoint(req: ProbeRequest):
 
 
 @router.post("/confirm")
-def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
+def confirm_and_save_nvr(
+    req: ConfirmNVRRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),  # F-01: SuperAdmin only
+):
     """
     Step 2: Confirm and save NVR and its cameras into PostgreSQL.
     Requires at least one Agent to exist.
     """
-    # Enforce agent prerequisite
+    validated_ip = _validate_nvr_ip(req.ip)
+
     target_agent = None
     if req.agent_id:
         target_agent = db.query(Agent).filter(Agent.id == req.agent_id).first()
@@ -99,10 +124,8 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
             detail="No Agent found. You must create an Agent first before adding NVR devices."
         )
 
-    # Simple 1-word NVR name without IP address
     raw_name = req.name.strip() if req.name and req.name.strip() else None
     if raw_name:
-        # Strip out any appended IP if present
         if " - " in raw_name and any(c.isdigit() for c in raw_name):
             nvr_name = raw_name.split(" - ")[0].strip() or (target_agent.name if (target_agent and target_agent.name) else "NVR Device")
         else:
@@ -119,20 +142,18 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
     ste = clean_loc(req.site) or clean_loc(target_agent.site)
     vend = req.vendor or "HIKVISION"
 
-    # Check if this NVR already exists in DB by agent, IP, or name
     existing_nvr = None
     if target_agent:
         existing_nvr = db.query(NVR).filter(NVR.agent_id == target_agent.id).first()
     if not existing_nvr:
-        existing_nvr = db.query(NVR).filter(NVR.ip == req.ip).first()
+        existing_nvr = db.query(NVR).filter(NVR.ip == validated_ip).first()
     if not existing_nvr and nvr_name:
         existing_nvr = db.query(NVR).filter(NVR.name == nvr_name).first()
 
     if existing_nvr:
-        # Update existing NVR with current bridged details
         existing_nvr.agent_id = target_agent.id
         existing_nvr.name = nvr_name
-        existing_nvr.ip = req.ip
+        existing_nvr.ip = validated_ip
         existing_nvr.port = req.port
         existing_nvr.rtsp_port = req.rtsp_port
         existing_nvr.username = req.username
@@ -144,16 +165,13 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
         if cty: existing_nvr.city = cty
         if ara: existing_nvr.area = ara
         if ste: existing_nvr.site = ste
-        
-        # Clear old cameras to re-populate
         db.query(Camera).filter(Camera.nvr_id == existing_nvr.id).delete()
         nvr = existing_nvr
     else:
-        # Create new NVR record
         nvr = NVR(
             agent_id=target_agent.id,
             name=nvr_name,
-            ip=req.ip,
+            ip=validated_ip,
             port=req.port,
             rtsp_port=req.rtsp_port,
             username=req.username,
@@ -169,16 +187,14 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
         db.add(nvr)
         db.flush()
 
-    # Clean up any other obsolete duplicate NVR records for this agent or matching IP / name
     obsolete_nvrs = db.query(NVR).filter(
         NVR.id != nvr.id,
-        (NVR.agent_id == target_agent.id) | (NVR.ip == req.ip) | (NVR.name == nvr.name)
+        (NVR.agent_id == target_agent.id) | (NVR.ip == validated_ip) | (NVR.name == nvr.name)
     ).all()
     for obs in obsolete_nvrs:
         db.query(Camera).filter(Camera.nvr_id == obs.id).delete()
         db.delete(obs)
 
-    # Add cameras
     for cam in req.cameras:
         new_cam = Camera(
             nvr_id=nvr.id,
@@ -194,7 +210,6 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nvr)
 
-    # Sync MediaMTX with new cameras automatically
     try:
         media_manager.sync_from_database()
     except Exception as e:
@@ -205,14 +220,6 @@ def confirm_and_save_nvr(req: ConfirmNVRRequest, db: Session = Depends(get_db)):
         "message": f"NVR '{nvr.name}' and {len(req.cameras)} cameras successfully saved to database!",
         "nvr": nvr.to_dict()
     }
-
-
-try:
-    from backend.auth.dependencies import get_current_user
-    from backend.models import User
-except ImportError:
-    from auth.dependencies import get_current_user
-    from models import User
 
 
 @router.get("/list")
@@ -231,6 +238,92 @@ def list_nvrs(
     return {"nvrs": [n.to_dict() for n in nvrs]}
 
 
+@router.get("/media/status")
+def get_media_status(current_user: User = Depends(get_current_user)):
+    """Check MediaMTX streaming engine status. Requires auth."""
+    return {
+        "running": media_manager.is_running(),
+        "webrtc_port": media_manager.webrtc_port,
+        "hls_port": media_manager.hls_port,
+        "rtsp_port": media_manager.rtsp_port,
+        "api_port": media_manager.api_port
+    }
+
+
+@router.post("/media/sync")
+def sync_media_mtx(current_user: User = Depends(require_superadmin)):
+    """Manually force-sync all cameras to MediaMTX. SuperAdmin only."""
+    try:
+        media_manager.sync_from_database()
+        return {
+            "success": True,
+            "message": "MediaMTX synchronized with database successfully.",
+            "running": media_manager.is_running()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/webrtc/{camera_id}")
+def get_camera_webrtc_stream(
+    camera_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # F-02: auth required
+):
+    """
+    Get ultra-low latency WebRTC stream endpoints (MediaMTX engine).
+    Requires authenticated user scoped to the camera's agent.
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found.")
+
+    if not current_user.is_superadmin:
+        nvr = camera.nvr
+        if not nvr or current_user.assigned_agent_id != nvr.agent_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this camera stream.")
+
+    if not media_manager.is_running():
+        media_manager.start()
+
+    urls = media_manager.get_stream_urls(camera_id)
+    return {
+        "camera_id": camera.id,
+        "camera_name": camera.name,
+        **urls
+    }
+
+
+@router.get("/stream/{camera_id}")
+def stream_camera(
+    camera_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # F-02: auth required
+):
+    """Live stream video proxy fallback (MJPEG). Requires auth scoped to camera's agent."""
+    from fastapi.responses import StreamingResponse
+    try:
+        from backend.agent.nvr.streamer import generate_mjpeg_stream
+    except ImportError:
+        from agent.nvr.streamer import generate_mjpeg_stream
+
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found.")
+
+    if not current_user.is_superadmin:
+        nvr = camera.nvr
+        if not nvr or current_user.assigned_agent_id != nvr.agent_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this camera stream.")
+
+    stream_url = camera.sub_stream_url if camera.sub_stream_url else camera.rtsp_stream_url
+
+    return StreamingResponse(
+        generate_mjpeg_stream(stream_url, camera.name),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
 class UpdateNVRRequest(BaseModel):
     name: Optional[str] = None
     ip: Optional[str] = None
@@ -245,7 +338,12 @@ class UpdateNVRRequest(BaseModel):
 
 
 @router.put("/{nvr_id}")
-def update_nvr(nvr_id: int, req: UpdateNVRRequest, db: Session = Depends(get_db)):
+def update_nvr(
+    nvr_id: int,
+    req: UpdateNVRRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),  # F-01: SuperAdmin only
+):
     """Update NVR device details."""
     nvr = db.query(NVR).filter(NVR.id == nvr_id).first()
     if not nvr:
@@ -254,7 +352,7 @@ def update_nvr(nvr_id: int, req: UpdateNVRRequest, db: Session = Depends(get_db)
     ip_changed = False
     if req.name is not None and req.name.strip(): nvr.name = req.name.strip()
     if req.ip is not None and req.ip.strip() and req.ip.strip() != old_ip:
-        nvr.ip = req.ip.strip()
+        nvr.ip = _validate_nvr_ip(req.ip)
         ip_changed = True
     if req.port is not None: nvr.port = req.port
     if req.rtsp_port is not None: nvr.rtsp_port = req.rtsp_port
@@ -302,92 +400,23 @@ def get_nvr(
 
 
 @router.delete("/{nvr_id}")
-def delete_nvr(nvr_id: int, db: Session = Depends(get_db)):
+def delete_nvr(
+    nvr_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),  # F-01: SuperAdmin only
+):
     """Delete an NVR and its cameras."""
     nvr = db.query(NVR).filter(NVR.id == nvr_id).first()
     if not nvr:
         raise HTTPException(status_code=404, detail="NVR not found.")
 
-    # Explicitly remove all associated cameras first to guarantee no FK violations
     db.query(Camera).filter(Camera.nvr_id == nvr_id).delete()
     db.delete(nvr)
     db.commit()
 
-    # Sync MediaMTX to remove deleted paths
     try:
         media_manager.sync_from_database()
     except Exception as e:
         print(f"[MediaMTX] Auto-sync after delete warning: {e}")
 
     return {"success": True, "message": f"NVR {nvr_id} deleted successfully."}
-
-
-@router.get("/webrtc/{camera_id}")
-def get_camera_webrtc_stream(camera_id: int, db: Session = Depends(get_db)):
-    """
-    Get ultra-low latency WebRTC stream endpoints (MediaMTX engine).
-    Zero Docker required.
-    """
-    camera = db.query(Camera).filter(Camera.id == camera_id).first()
-    if not camera:
-        raise HTTPException(status_code=404, detail="Camera not found.")
-
-    # Ensure MediaMTX is alive
-    if not media_manager.is_running():
-        media_manager.start()
-
-    urls = media_manager.get_stream_urls(camera_id)
-    return {
-        "camera_id": camera.id,
-        "camera_name": camera.name,
-        **urls
-    }
-
-
-@router.get("/media/status")
-def get_media_status():
-    """Check MediaMTX streaming engine status."""
-    return {
-        "running": media_manager.is_running(),
-        "webrtc_port": media_manager.webrtc_port,
-        "hls_port": media_manager.hls_port,
-        "rtsp_port": media_manager.rtsp_port,
-        "api_port": media_manager.api_port
-    }
-
-
-@router.post("/media/sync")
-def sync_media_mtx():
-    """Manually force-sync all cameras to MediaMTX config and update engine."""
-    try:
-        media_manager.sync_from_database()
-        return {
-            "success": True,
-            "message": "MediaMTX synchronized with database successfully.",
-            "running": media_manager.is_running()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/stream/{camera_id}")
-def stream_camera(camera_id: int, db: Session = Depends(get_db)):
-    """
-    Live stream video proxy fallback (MJPEG multipart stream).
-    """
-    from fastapi.responses import StreamingResponse
-    try:
-        from backend.agent.nvr.streamer import generate_mjpeg_stream
-    except ImportError:
-        from agent.nvr.streamer import generate_mjpeg_stream
-
-    camera = db.query(Camera).filter(Camera.id == camera_id).first()
-    if not camera:
-        raise HTTPException(status_code=404, detail="Camera not found.")
-
-    stream_url = camera.sub_stream_url if camera.sub_stream_url else camera.rtsp_stream_url
-
-    return StreamingResponse(
-        generate_mjpeg_stream(stream_url, camera.name),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )

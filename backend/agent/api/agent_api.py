@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -10,10 +10,14 @@ try:
     from backend.database import get_db
     from backend.models import Agent, NVR, Camera
     from backend.media.manager import media_manager
+    from backend.auth.dependencies import get_current_user, require_superadmin
+    from backend.models import User
 except ImportError:
     from database import get_db
     from models import Agent, NVR, Camera
     from media.manager import media_manager
+    from auth.dependencies import get_current_user, require_superadmin
+    from models import User
 
 router = APIRouter(prefix="/api/agent", tags=["Agent"])
 
@@ -24,7 +28,11 @@ class CreateAgentRequest(BaseModel):
 
 
 @router.post("/create")
-def create_agent(req: CreateAgentRequest, db: Session = Depends(get_db)):
+def create_agent(
+    req: CreateAgentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),  # F-01: SuperAdmin only
+):
     """Create a new monitoring agent (returns existing agent if name matches)."""
     if not req.name or not req.name.strip():
         raise HTTPException(
@@ -61,39 +69,15 @@ def create_agent(req: CreateAgentRequest, db: Session = Depends(get_db)):
     }
 
 
-try:
-    from backend.auth.dependencies import get_current_user
-    from backend.models import User
-except ImportError:
-    from auth.dependencies import get_current_user
-    from models import User
-
-
 @router.get("/list")
 def list_agents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List registered agents scoped to the logged-in user, auto-merging any duplicates."""
-    # Auto-merge duplicates on the fly
-    try:
-        from sqlalchemy import func
-        all_raw_agents = db.query(Agent).order_by(Agent.id.asc()).all()
-        seen = {}
-        for ag in all_raw_agents:
-            key = ag.name.strip().lower()
-            if key not in seen:
-                seen[key] = ag
-            else:
-                primary = seen[key]
-                dup = ag
-                db.query(NVR).filter(NVR.agent_id == dup.id).update({NVR.agent_id: primary.id}, synchronize_session=False)
-                db.query(User).filter(User.assigned_agent_id == dup.id).update({User.assigned_agent_id: primary.id}, synchronize_session=False)
-                db.delete(dup)
-        db.commit()
-    except Exception as e:
-        print(f"[AgentList] Deduplication notice: {e}")
-
+    """List registered agents scoped to the logged-in user.
+    F-10 FIX: Pure read — deduplication/merge removed from GET handler.
+    Agent merging is handled exclusively at startup (reconcile_duplicate_agents in main.py).
+    """
     query = db.query(Agent)
     if not current_user.is_superadmin:
         if current_user.assigned_agent_id:
@@ -104,86 +88,9 @@ def list_agents(
     return {"agents": [a.to_dict() for a in agents]}
 
 
-@router.get("/{agent_id}")
-def get_agent(
-    agent_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get single agent details with NVRs scoped to user."""
-    if not current_user.is_superadmin and current_user.assigned_agent_id != agent_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this Agent.")
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found.")
-    return agent.to_dict()
-
-
-class UpdateAgentRequest(BaseModel):
-    name: Optional[str] = None
-    status: Optional[str] = None
-    province: Optional[str] = None
-    city: Optional[str] = None
-    area: Optional[str] = None
-    site: Optional[str] = None
-
-
-@router.put("/{agent_id}")
-def update_agent(agent_id: int, req: UpdateAgentRequest, db: Session = Depends(get_db)):
-    """Update an existing agent's name, status, or location details."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found.")
-    if req.name is not None and req.name.strip():
-        agent.name = req.name.strip()
-    if req.status is not None:
-        agent.status = req.status
-    if req.province is not None:
-        agent.province = req.province
-    if req.city is not None:
-        agent.city = req.city
-    if req.area is not None:
-        agent.area = req.area
-    if req.site is not None:
-        agent.site = req.site
-    db.commit()
-    db.refresh(agent)
-    return {"success": True, "message": f"Agent {agent_id} updated successfully.", "agent": agent.to_dict()}
-
-
-@router.delete("/{agent_id}")
-def delete_agent(agent_id: int, db: Session = Depends(get_db)):
-    """
-    Delete an agent and cascade delete all its associated NVRs & cameras.
-    Also syncs MediaMTX streaming paths.
-    """
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found.")
-
-    # Find all NVR IDs for this agent
-    nvr_ids = [n.id for n in agent.nvrs]
-
-    # Explicitly clean up cameras first for database consistency
-    if nvr_ids:
-        db.query(Camera).filter(Camera.nvr_id.in_(nvr_ids)).delete(synchronize_session=False)
-        db.query(NVR).filter(NVR.agent_id == agent_id).delete(synchronize_session=False)
-
-    db.delete(agent)
-    db.commit()
-
-    # Re-sync MediaMTX paths
-    try:
-        media_manager.sync_from_database()
-    except Exception as e:
-        print(f"[MediaMTX] Auto-sync after agent delete warning: {e}")
-
-    return {"success": True, "message": f"Agent {agent_id} and all associated NVRs deleted successfully."}
-
-
 @router.get("/download/epic-agent.py")
-def download_epic_agent_file():
-    """Serve standalone epic-agent.py directly for easy client-side installation."""
+def download_epic_agent_file(current_user: User = Depends(get_current_user)):
+    """Serve standalone epic-agent.py for client-side installation. F-01: Requires login."""
     possible_paths = [
         Path(__file__).resolve().parent.parent.parent.parent / "epic-agent.py",
         Path(__file__).resolve().parent.parent.parent / "epic-agent.py",
@@ -197,8 +104,14 @@ def download_epic_agent_file():
 
 
 @router.get("/{agent_id}/status")
-def get_agent_status(agent_id: int, db: Session = Depends(get_db)):
+def get_agent_status(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # F-01: auth required
+):
     """Check agent deployment status, associated NVRs, and camera count."""
+    if not current_user.is_superadmin and current_user.assigned_agent_id != agent_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this Agent.")
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found.")
@@ -218,17 +131,17 @@ def get_agent_status(agent_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{agent_id}/launcher.bat")
-def download_agent_launcher(agent_id: int, request: Request, db: Session = Depends(get_db)):
-    """
-    Generate and serve a customized 1-Click Windows batch launcher (.bat) for this Agent.
-    When executed on any branch PC, it opens CMD, pulls epic-agent.py, prompts for local NVR IP,
-    and registers all camera streams to the central server without VPN or NAT port forwarding.
-    """
+def download_agent_launcher(
+    agent_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # F-01: auth required
+):
+    """Generate and serve a customized 1-Click Windows batch launcher (.bat) for this Agent."""
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found.")
 
-    # Determine external server URL dynamically from request headers
     host_header = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc or "127.0.0.1"
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
     server_url = f"{proto}://{host_header}".rstrip("/")
@@ -266,7 +179,7 @@ if %errorlevel% neq 0 (
     )
 )
 
-echo [✓] Python runtime detected (%PYCMD%).
+echo [OK] Python runtime detected (%PYCMD%).
 echo.
 echo [2/3] Downloading latest Edge Agent from Central Server...
 if exist epic-agent.py del /f /q epic-agent.py
@@ -275,7 +188,7 @@ if not exist epic-agent.py (
     curl -s -f -O {server_url}/epic-agent.py
 )
 if not exist epic-agent.py (
-    powershell -Command "try { (New-Object Net.WebClient).DownloadFile('{server_url}/api/agent/download/epic-agent.py', 'epic-agent.py') } catch { (New-Object Net.WebClient).DownloadFile('{server_url}/epic-agent.py', 'epic-agent.py') }"
+    powershell -Command "try {{ (New-Object Net.WebClient).DownloadFile('{server_url}/api/agent/download/epic-agent.py', 'epic-agent.py') }} catch {{ (New-Object Net.WebClient).DownloadFile('{server_url}/epic-agent.py', 'epic-agent.py') }}"
 )
 
 if not exist epic-agent.py (
@@ -287,7 +200,7 @@ if not exist epic-agent.py (
     exit /b 1
 )
 
-echo [✓] Edge Agent downloaded.
+echo [OK] Edge Agent downloaded.
 echo.
 echo [3/3] Launching Edge Agent for Branch '{agent.name}'...
 echo.
@@ -312,10 +225,13 @@ pause
 
 
 @router.get("/{agent_id}/launcher.sh")
-def download_agent_launcher_linux(agent_id: int, request: Request, db: Session = Depends(get_db)):
-    """
-    Generate and serve a customized 1-Click Linux shell launcher (.sh) for this Agent.
-    """
+def download_agent_launcher_linux(
+    agent_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # F-01: auth required
+):
+    """Generate and serve a customized 1-Click Linux shell launcher (.sh) for this Agent."""
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found.")
@@ -349,8 +265,7 @@ else
     exit 1
 fi
 
-echo "[✓] Python runtime detected ($PYCMD)."
-echo ""
+echo "[OK] Python runtime detected ($PYCMD)."
 echo ""
 echo "[2/3] Downloading latest Edge Agent from Central Server..."
 rm -f epic-agent.py
@@ -362,7 +277,7 @@ if [ ! -s "epic-agent.py" ]; then
     exit 1
 fi
 
-echo "[✓] Edge Agent downloaded."
+echo "[OK] Edge Agent downloaded."
 echo ""
 echo "[3/3] Launching Edge Agent for Branch '{agent.name}'..."
 echo ""
@@ -379,3 +294,81 @@ read -p "Press Enter to close this terminal..."
     )
 
 
+@router.get("/{agent_id}")
+def get_agent(
+    agent_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get single agent details with NVRs scoped to user."""
+    if not current_user.is_superadmin and current_user.assigned_agent_id != agent_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this Agent.")
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    return agent.to_dict()
+
+
+class UpdateAgentRequest(BaseModel):
+    name: Optional[str] = None
+    status: Optional[str] = None
+    province: Optional[str] = None
+    city: Optional[str] = None
+    area: Optional[str] = None
+    site: Optional[str] = None
+
+
+@router.put("/{agent_id}")
+def update_agent(
+    agent_id: int,
+    req: UpdateAgentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),  # F-01: SuperAdmin only
+):
+    """Update an existing agent's name, status, or location details."""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    if req.name is not None and req.name.strip():
+        agent.name = req.name.strip()
+    if req.status is not None:
+        agent.status = req.status
+    if req.province is not None:
+        agent.province = req.province
+    if req.city is not None:
+        agent.city = req.city
+    if req.area is not None:
+        agent.area = req.area
+    if req.site is not None:
+        agent.site = req.site
+    db.commit()
+    db.refresh(agent)
+    return {"success": True, "message": f"Agent {agent_id} updated successfully.", "agent": agent.to_dict()}
+
+
+@router.delete("/{agent_id}")
+def delete_agent(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),  # F-01: SuperAdmin only
+):
+    """Delete an agent and cascade delete all its associated NVRs & cameras."""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+
+    nvr_ids = [n.id for n in agent.nvrs]
+
+    if nvr_ids:
+        db.query(Camera).filter(Camera.nvr_id.in_(nvr_ids)).delete(synchronize_session=False)
+        db.query(NVR).filter(NVR.agent_id == agent_id).delete(synchronize_session=False)
+
+    db.delete(agent)
+    db.commit()
+
+    try:
+        media_manager.sync_from_database()
+    except Exception as e:
+        print(f"[MediaMTX] Auto-sync after agent delete warning: {e}")
+
+    return {"success": True, "message": f"Agent {agent_id} and all associated NVRs deleted successfully."}

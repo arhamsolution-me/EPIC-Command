@@ -1,5 +1,6 @@
-import os
+﻿import os
 import sys
+from fastapi import FastAPI, Request
 
 # Ensure backend directory is in path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -24,14 +25,30 @@ app = FastAPI(
     description="EPIC Command Backend with Super Admin Dashboard, Dynamic RBAC, Multi-Location Scoping & MediaMTX Engine"
 )
 
-# Enable CORS
+# F-06: Restrict CORS to explicit origins (never wildcard with credentials)
+_raw_cors = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_cors.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# F-07: Security response headers + F-09: suppress server version banner
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-ancestors 'none';"
+    )
+    response.headers.pop("server", None)  # F-09: suppress Uvicorn/server version banner
+    return response
 
 # Register All API Routers cleanly
 app.include_router(auth_router)

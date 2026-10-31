@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Query, HTTPException, Depends, status
@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Location
+from models import Location, User
+from auth.dependencies import get_current_user, require_superadmin
 
 router = APIRouter(prefix="/api/locations", tags=["Locations"])
 
@@ -37,7 +38,7 @@ class CreateLocationRequest(BaseModel):
 
 
 @router.get("/summary")
-def get_locations_summary(db: Session = Depends(get_db)):
+def get_locations_summary(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):  # F-06: require auth
     """Returns all system-registered locations from the database."""
     all_locs = db.query(Location).all()
     loc_by_id = {loc.id: loc for loc in all_locs}
@@ -103,7 +104,7 @@ def get_locations_summary(db: Session = Depends(get_db)):
 
 
 @router.post("/create")
-def create_location(req: CreateLocationRequest, db: Session = Depends(get_db)):
+def create_location(req: CreateLocationRequest, db: Session = Depends(get_db), current_user: User = Depends(require_superadmin)):  # F-01: require superadmin
     """Create a new province, city, area, or site in the database."""
     name_clean = req.name.strip()
     if not name_clean:
@@ -139,7 +140,7 @@ def create_location(req: CreateLocationRequest, db: Session = Depends(get_db)):
 
 
 @router.delete("/{location_id}")
-def delete_location(location_id: int, db: Session = Depends(get_db)):
+def delete_location(location_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_superadmin)):  # F-01: require superadmin
     """Delete a location and all its descendant locations recursively."""
     loc = db.query(Location).filter(Location.id == location_id).first()
     if not loc:

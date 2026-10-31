@@ -1,6 +1,10 @@
-import requests
+﻿import requests
 from requests.auth import HTTPDigestAuth
-import xml.etree.ElementTree as ET
+# F-08: Use defusedxml to prevent XML entity expansion / injection attacks
+try:
+    import defusedxml.ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET  # fallback if defusedxml not installed
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -8,10 +12,12 @@ from sqlalchemy.orm import Session
 
 try:
     from backend.database import get_db
-    from backend.models import Camera, NVR
+    from backend.models import Camera, NVR, User
+    from backend.auth.dependencies import get_current_user, require_superadmin
 except ImportError:
     from database import get_db
-    from models import Camera, NVR
+    from models import Camera, NVR, User
+    from auth.dependencies import get_current_user, require_superadmin
 
 router = APIRouter(prefix="/api/ptz", tags=["PTZ"])
 
@@ -45,7 +51,7 @@ class PresetActionRequest(BaseModel):
 
 
 @router.post("/control/{camera_id}")
-def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Depends(get_db)):
+def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Continuous Move & Step PTZ Control (Pan, Tilt, Zoom, Stop).
     Communicates directly with NVR / Camera via Hikvision ISAPI.
@@ -57,6 +63,10 @@ def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Dep
     nvr = camera.nvr
     if not nvr:
         raise HTTPException(status_code=404, detail="Parent NVR not found.")
+
+    # F-02: Enforce agent scope for non-superadmin users
+    if not getattr(current_user, 'is_superadmin', False) and getattr(current_user, 'assigned_agent_id', None) != nvr.agent_id:
+        raise HTTPException(status_code=403, detail="Access denied: camera not in your assigned agent scope.")
 
     user_speed = max(1, min(100, req.speed or 50))
 
@@ -165,7 +175,7 @@ def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Dep
 
 
 @router.get("/presets/{camera_id}")
-def get_camera_presets(camera_id: int, db: Session = Depends(get_db)):
+def get_camera_presets(camera_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Fetch all saved presets for the camera."""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
@@ -174,6 +184,10 @@ def get_camera_presets(camera_id: int, db: Session = Depends(get_db)):
     nvr = camera.nvr
     if not nvr:
         raise HTTPException(status_code=404, detail="Parent NVR not found.")
+
+    # F-02: Enforce agent scope for non-superadmin users
+    if not getattr(current_user, 'is_superadmin', False) and getattr(current_user, 'assigned_agent_id', None) != nvr.agent_id:
+        raise HTTPException(status_code=403, detail="Access denied: camera not in your assigned agent scope.")
 
     url = f"http://{nvr.ip}:{nvr.port}/ISAPI/PTZCtrl/channels/{camera.channel_number}/presets"
     session = get_cached_session(nvr.ip, nvr.username, nvr.password or "")
@@ -199,7 +213,7 @@ def get_camera_presets(camera_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/presets/{camera_id}/goto")
-def goto_preset(camera_id: int, req: PresetActionRequest, db: Session = Depends(get_db)):
+def goto_preset(camera_id: int, req: PresetActionRequest, db: Session = Depends(get_db), current_user: User = Depends(require_superadmin)):
     """Instruct the camera to move to a pre-saved preset position."""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
@@ -220,7 +234,7 @@ def goto_preset(camera_id: int, req: PresetActionRequest, db: Session = Depends(
 
 
 @router.post("/presets/{camera_id}/set")
-def set_preset(camera_id: int, req: PresetActionRequest, db: Session = Depends(get_db)):
+def set_preset(camera_id: int, req: PresetActionRequest, db: Session = Depends(get_db), current_user: User = Depends(require_superadmin)):
     """Save current motor position as a preset."""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
