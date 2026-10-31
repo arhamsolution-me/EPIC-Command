@@ -9,14 +9,14 @@ try:
     from backend.models import Agent, NVR, Camera
     from backend.agent.nvr.scanner import probe_nvr
     from backend.media.manager import media_manager
-    from backend.auth.dependencies import get_current_user, require_superadmin, require_permission
+    from backend.auth.dependencies import get_current_user, require_superadmin, require_permission, get_optional_current_user
     from backend.models import User
 except ImportError:
     from database import get_db
     from models import Agent, NVR, Camera
     from agent.nvr.scanner import probe_nvr
     from media.manager import media_manager
-    from auth.dependencies import get_current_user, require_superadmin, require_permission
+    from auth.dependencies import get_current_user, require_superadmin, require_permission, get_optional_current_user
     from models import User
 
 router = APIRouter(prefix="/api/nvr", tags=["NVR"])
@@ -104,7 +104,7 @@ def probe_nvr_endpoint(
 def confirm_and_save_nvr(
     req: ConfirmNVRRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("NVR_CREATE")),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     Step 2: Confirm and save NVR and its cameras into PostgreSQL.

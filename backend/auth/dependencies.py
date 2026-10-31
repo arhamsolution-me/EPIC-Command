@@ -76,6 +76,28 @@ def get_current_user(
     return user
 
 
+
+
+def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Return active user if valid Bearer token provided, else None."""
+    if not credentials or not credentials.credentials:
+        return None
+    try:
+        token = credentials.credentials
+        payload = decode_access_token(token)
+        if not payload:
+            return None
+        user_id_str = payload.get('sub')
+        if not user_id_str:
+            return None
+        user_id = int(user_id_str)
+        return db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    except Exception:
+        return None
+
 def require_superadmin(current_user: User = Depends(get_current_user)) -> User:
     """Enforce Super Admin only access."""
     if not current_user.is_superadmin:
