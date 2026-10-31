@@ -1,4 +1,4 @@
-﻿const getApiBaseUrl = () => {
+const getApiBaseUrl = () => {
   const envVal = import.meta.env.VITE_API_BASE_URL;
   if (envVal !== undefined && envVal !== null && envVal !== '') {
     return envVal;
@@ -18,6 +18,10 @@ const getWebrtcStreamBase = () => {
   if (envVal !== undefined && envVal !== null && envVal !== '') {
     return envVal;
   }
+  // Route via /whep reverse proxy in production to enforce strict security headers and eliminate cross-origin risks
+  if (import.meta.env.PROD) {
+    return '/whep';
+  }
   if (typeof window !== 'undefined' && window.location) {
     return `${window.location.protocol}//${window.location.hostname}:8889`;
   }
@@ -27,8 +31,19 @@ const getWebrtcStreamBase = () => {
 export const API_BASE_URL = getApiBaseUrl();
 export const WEBRTC_STREAM_BASE = getWebrtcStreamBase();
 
+export const getStoredToken = () => {
+  return sessionStorage.getItem('epic_token') || localStorage.getItem('epic_token');
+};
+
+export const clearStoredAuth = () => {
+  sessionStorage.removeItem('epic_token');
+  sessionStorage.removeItem('epic_user');
+  localStorage.removeItem('epic_token');
+  localStorage.removeItem('epic_user');
+};
+
 export async function apiRequest(endpoint, options = {}) {
-  const token = sessionStorage.getItem('epic_token');
+  const token = getStoredToken();
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
@@ -47,8 +62,7 @@ export async function apiRequest(endpoint, options = {}) {
 
   if (response.status === 401) {
     // Session expired or invalid
-    sessionStorage.removeItem('epic_token');
-    sessionStorage.removeItem('epic_user');
+    clearStoredAuth();
     window.dispatchEvent(new Event('epic_auth_expired'));
   }
 

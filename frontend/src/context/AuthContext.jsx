@@ -1,18 +1,51 @@
-﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext(null);
 
+const sanitizeUserForStorage = (userData) => {
+  if (!userData) return null;
+  // Exclude sensitive email and internal timestamp details to prevent client-side data leaks (CWE-359)
+  const { email, created_at, phone, ...safeUser } = userData;
+  return safeUser;
+};
+
+const getStoredToken = () => {
+  return sessionStorage.getItem('epic_token') || localStorage.getItem('epic_token');
+};
+
+const getStoredUser = () => {
+  try {
+    const saved = sessionStorage.getItem('epic_user') || localStorage.getItem('epic_user');
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+};
+
+const saveSessionAuth = (tokenVal, userVal) => {
+  if (tokenVal) {
+    sessionStorage.setItem('epic_token', tokenVal);
+  }
+  if (userVal) {
+    const safeUser = sanitizeUserForStorage(userVal);
+    sessionStorage.setItem('epic_user', JSON.stringify(safeUser));
+  }
+  // Clear persistent localStorage items (CWE-922 / CWE-359)
+  localStorage.removeItem('epic_token');
+  localStorage.removeItem('epic_user');
+};
+
+const clearSessionAuth = () => {
+  sessionStorage.removeItem('epic_token');
+  sessionStorage.removeItem('epic_user');
+  localStorage.removeItem('epic_token');
+  localStorage.removeItem('epic_user');
+};
+
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => sessionStorage.getItem('epic_token'));
-  const [user, setUser] = useState(() => {
-    try {
-      const saved = sessionStorage.getItem('epic_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [token, setToken] = useState(getStoredToken);
+  const [user, setUser] = useState(getStoredUser);
   const [isLoading, setIsLoading] = useState(true);
 
   const logout = useCallback(async () => {
@@ -23,15 +56,14 @@ export function AuthProvider({ children }) {
     } catch {
       // Ignore network errors on logout
     } finally {
-      sessionStorage.removeItem('epic_token');
-      sessionStorage.removeItem('epic_user');
+      clearSessionAuth();
       setToken(null);
       setUser(null);
     }
   }, [token]);
 
   const refreshProfile = useCallback(async () => {
-    const currentToken = sessionStorage.getItem('epic_token');
+    const currentToken = getStoredToken();
     if (!currentToken) {
       setUser(null);
       setIsLoading(false);
@@ -44,7 +76,7 @@ export function AuthProvider({ children }) {
         const data = await res.json();
         if (data.user) {
           setUser(data.user);
-          sessionStorage.setItem('epic_user', JSON.stringify(data.user));
+          saveSessionAuth(currentToken, data.user);
         }
       } else if (res.status === 401 || res.status === 403) {
         logout();
@@ -118,8 +150,7 @@ export function AuthProvider({ children }) {
       throw new Error(data.detail || 'Login failed. Please check credentials.');
     }
     const data = await res.json();
-    sessionStorage.setItem('epic_token', data.token);
-    sessionStorage.setItem('epic_user', JSON.stringify(data.user));
+    saveSessionAuth(data.token, data.user);
     setToken(data.token);
     setUser(data.user);
     return data.user;
