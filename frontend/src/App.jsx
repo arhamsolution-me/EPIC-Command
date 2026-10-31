@@ -313,7 +313,6 @@ function MainApp() {
     handleCloseModal();
     setActiveNav('monitor');
   };
-  };
 
   // Live Monitor Grid Mode (persisted in cache)
   const [gridMode, setGridMode] = useState(() => {
@@ -2498,229 +2497,260 @@ function MainApp() {
                           )}
                         </div>
 
-                        {!selectedPtzCam.is_ptz && (
-                          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px', textAlign: 'center', color: '#64748b', fontSize: '0.80rem', fontWeight: 600 }}>
-                            No PTZ controls supported for this camera
+                        {selectedPtzCam.is_ptz ? (
+                          <>
+                            {/* Section: Pan/Tilt Speed Velocity Slider */}
+                            <div>
+                              <div className="ptz-section-title">
+                                <span>PAN / TILT SPEED</span>
+                                <span className="font-mono" style={{ color: '#059669', fontSize: '0.82rem', fontWeight: 700 }}>{ptzSpeed}%</span>
+                              </div>
+
+                              <input
+                                type="range"
+                                min="1"
+                                max="100"
+                                value={ptzSpeed}
+                                onChange={(e) => setPtzSpeed(Number.parseInt(e.target.value, 10))}
+                                style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
+                              />
+                            </div>
+
+                            {/* Section: 8-DIRECTIONAL JOYSTICK */}
+                            <div>
+                              <div className="ptz-section-title">
+                                <span>DIRECTIONAL JOYSTICK</span>
+                                <span style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'none', fontWeight: 500 }}>Click for step • Hold to move</span>
+                              </div>
+
+                              <div className="joystick-pad">
+                                {/* CARDINAL: UP */}
+                                <button
+                                  type="button"
+                                  className={`joystick-btn joystick-up ${activePtzAction === 'tilt_up' ? 'active' : ''}`}
+                                  onMouseDown={() => handlePtzPointerDown('tilt_up')}
+                                  onMouseUp={() => handlePtzPointerUp('tilt_up')}
+                                  onTouchStart={() => handlePtzPointerDown('tilt_up')}
+                                  onTouchEnd={() => handlePtzPointerUp('tilt_up')}
+                                  title="Tilt Up"
+                                >
+                                  <ChevronUp size={22} />
+                                </button>
+
+                                {/* CARDINAL: LEFT */}
+                                <button
+                                  type="button"
+                                  className={`joystick-btn joystick-left ${activePtzAction === 'pan_left' ? 'active' : ''}`}
+                                  onMouseDown={() => handlePtzPointerDown('pan_left')}
+                                  onMouseUp={() => handlePtzPointerUp('pan_left')}
+                                  onTouchStart={() => handlePtzPointerDown('pan_left')}
+                                  onTouchEnd={() => handlePtzPointerUp('pan_left')}
+                                  title="Pan Left"
+                                >
+                                  <ChevronLeft size={22} />
+                                </button>
+
+                                {/* CENTER EMERGENCY STOP */}
+                                <button
+                                  type="button"
+                                  className="joystick-center-stop"
+                                  onClick={handlePtzStop}
+                                  title="Emergency Motor Halt"
+                                >
+                                  STOP
+                                </button>
+
+                                {/* CARDINAL: RIGHT */}
+                                <button
+                                  type="button"
+                                  className={`joystick-btn joystick-right ${activePtzAction === 'pan_right' ? 'active' : ''}`}
+                                  onMouseDown={() => handlePtzPointerDown('pan_right')}
+                                  onMouseUp={() => handlePtzPointerUp('pan_right')}
+                                  onTouchStart={() => handlePtzPointerDown('pan_right')}
+                                  onTouchEnd={() => handlePtzPointerUp('pan_right')}
+                                  title="Pan Right"
+                                >
+                                  <ChevronRight size={22} />
+                                </button>
+
+                                {/* CARDINAL: DOWN */}
+                                <button
+                                  type="button"
+                                  className={`joystick-btn joystick-down ${activePtzAction === 'tilt_down' ? 'active' : ''}`}
+                                  onMouseDown={() => handlePtzPointerDown('tilt_down')}
+                                  onMouseUp={() => handlePtzPointerUp('tilt_down')}
+                                  onTouchStart={() => handlePtzPointerDown('tilt_down')}
+                                  onTouchEnd={() => handlePtzPointerUp('tilt_down')}
+                                  title="Tilt Down"
+                                >
+                                  <ChevronDown size={22} />
+                                </button>
+
+                                {/* DIAGONAL: UP-LEFT */}
+                                <button
+                                  type="button"
+                                  className={`joystick-diagonal-btn joystick-up-left ${activePtzAction === 'pan_up_left' ? 'active' : ''}`}
+                                  onMouseDown={() => handlePtzPointerDown('pan_up_left')}
+                                  onMouseUp={() => handlePtzPointerUp('pan_up_left')}
+                                  onTouchStart={() => handlePtzPointerDown('pan_up_left')}
+                                  onTouchEnd={() => handlePtzPointerUp('pan_up_left')}
+                                  title="Pan Up-Left"
+                                >
+                                  ↖
+                                </button>
+
+                                {/* DIAGONAL: UP-RIGHT */}
+                                <button
+                                  type="button"
+                                  className={`joystick-diagonal-btn joystick-up-right ${activePtzAction === 'pan_up_right' ? 'active' : ''}`}
+                                  onMouseDown={() => handlePtzPointerDown('pan_up_right')}
+                                  onMouseUp={() => handlePtzPointerUp('pan_up_right')}
+                                  onTouchStart={() => handlePtzPointerDown('pan_up_right')}
+                                  onTouchEnd={() => handlePtzPointerUp('pan_up_right')}
+                                  title="Pan Up-Right"
+                                >
+                                  ↗
+                                </button>
+
+                                {/* DIAGONAL: DOWN-LEFT */}
+                                <button
+                                  type="button"
+                                  className={`joystick-diagonal-btn joystick-down-left ${activePtzAction === 'pan_down_left' ? 'active' : ''}`}
+                                  onMouseDown={() => handlePtzPointerDown('pan_down_left')}
+                                  onMouseUp={() => handlePtzPointerUp('pan_down_left')}
+                                  onTouchStart={() => handlePtzPointerDown('pan_down_left')}
+                                  onTouchEnd={() => handlePtzPointerUp('pan_down_left')}
+                                  title="Pan Down-Left"
+                                >
+                                  ↙
+                                </button>
+
+                                {/* DIAGONAL: DOWN-RIGHT */}
+                                <button
+                                  type="button"
+                                  className={`joystick-diagonal-btn joystick-down-right ${activePtzAction === 'pan_down_right' ? 'active' : ''}`}
+                                  onMouseDown={() => handlePtzPointerDown('pan_down_right')}
+                                  onMouseUp={() => handlePtzPointerUp('pan_down_right')}
+                                  onTouchStart={() => handlePtzPointerDown('pan_down_right')}
+                                  onTouchEnd={() => handlePtzPointerUp('pan_down_right')}
+                                  title="Pan Down-Right"
+                                >
+                                  ↘
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Section: ULTRA-SLOW OPTICAL ZOOM */}
+                            <div>
+                              <div className="ptz-section-title">
+                                <span>SLOW OPTICAL ZOOM</span>
+                                <span style={{ fontSize: '0.68rem', color: '#059669', fontWeight: 600, textTransform: 'none' }}>
+                                  Micro-stepped
+                                </span>
+                              </div>
+
+                              <div className="ptz-zoom-card">
+                                <div className="ptz-zoom-buttons">
+                                  <button
+                                    type="button"
+                                    className={`ptz-zoom-btn ${activePtzAction === 'zoom_out' ? 'active' : ''}`}
+                                    onMouseDown={() => handlePtzPointerDown('zoom_out', true)}
+                                    onMouseUp={() => handlePtzPointerUp('zoom_out', true)}
+                                    onTouchStart={() => handlePtzPointerDown('zoom_out', true)}
+                                    onTouchEnd={() => handlePtzPointerUp('zoom_out', true)}
+                                    title="Slow Zoom Out (Wide)"
+                                  >
+                                    <ZoomOut size={16} color={activePtzAction === 'zoom_out' ? '#ffffff' : '#059669'} />
+                                    Zoom Out
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className={`ptz-zoom-btn ${activePtzAction === 'zoom_in' ? 'active' : ''}`}
+                                    onMouseDown={() => handlePtzPointerDown('zoom_in', true)}
+                                    onMouseUp={() => handlePtzPointerUp('zoom_in', true)}
+                                    onTouchStart={() => handlePtzPointerDown('zoom_in', true)}
+                                    onTouchEnd={() => handlePtzPointerUp('zoom_in', true)}
+                                    title="Slow Zoom In (Telephoto)"
+                                  >
+                                    <ZoomIn size={16} color={activePtzAction === 'zoom_in' ? '#ffffff' : '#059669'} />
+                                    Zoom In
+                                  </button>
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                                  Calibrated gentle optical zoom preserves focus sharpness
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Section: PRESET POSITIONS (P1 - P5) */}
+                            <div>
+                              <div className="ptz-section-title">
+                                <span>PRESET POSITIONS</span>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#059669' }}>P{activePreset} Active</span>
+                              </div>
+
+                              <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                                {[1, 2, 3, 4, 5].map((pNum) => (
+                                  <button
+                                    key={pNum}
+                                    type="button"
+                                    className={`preset-pill-btn ${activePreset === pNum ? 'active' : ''}`}
+                                    onClick={() => handleGotoPreset(pNum)}
+                                    title={`Move to Preset P${pNum}`}
+                                  >
+                                    P{pNum}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* Save Current Position as Preset */}
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                style={{ width: '100%', fontSize: '0.74rem', padding: '6px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                onClick={handleSaveCurrentPreset}
+                                disabled={isSavingPreset}
+                              >
+                                <Save size={13} color="#059669" />
+                                {savePresetFeedback || (isSavingPreset ? 'Saving Preset...' : `Save Position as Preset P${activePreset}`)}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{
+                            background: '#f8fafc',
+                            border: '1px dashed #cbd5e1',
+                            borderRadius: '10px',
+                            padding: '36px 16px',
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '12px',
+                            margin: '24px 0'
+                          }}>
+                            <div style={{
+                              width: '46px',
+                              height: '46px',
+                              borderRadius: '50%',
+                              background: '#f1f5f9',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#64748b'
+                            }}>
+                              <Sliders size={20} />
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: '0.90rem', color: '#1e293b' }}>
+                              No PTZ controls supported
+                            </div>
+                            <p style={{ fontSize: '0.76rem', color: '#64748b', margin: 0, lineHeight: 1.45, maxWidth: '210px' }}>
+                              This camera is a fixed lens unit and does not support motorized pan, tilt, or zoom controls.
+                            </p>
                           </div>
                         )}
-
-                        {/* Section: Pan/Tilt Speed Velocity Slider */}
-                        <div style={{ opacity: selectedPtzCam.is_ptz ? 1 : 0.45, pointerEvents: selectedPtzCam.is_ptz ? 'auto' : 'none' }}>
-                          <div className="ptz-section-title">
-                            <span>PAN / TILT SPEED</span>
-                            <span className="font-mono" style={{ color: '#059669', fontSize: '0.82rem', fontWeight: 700 }}>{ptzSpeed}%</span>
-                          </div>
-
-                          <input
-                            type="range"
-                            min="1"
-                            max="100"
-                            value={ptzSpeed}
-                            onChange={(e) => setPtzSpeed(parseInt(e.target.value, 10))}
-                            style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
-                          />
-                        </div>
-
-                        {/* Section: 8-DIRECTIONAL JOYSTICK */}
-                        <div>
-                          <div className="ptz-section-title">
-                            <span>DIRECTIONAL JOYSTICK</span>
-                            <span style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'none', fontWeight: 500 }}>Click for step • Hold to move</span>
-                          </div>
-
-                          <div className="joystick-pad">
-                            {/* CARDINAL: UP */}
-                            <button
-                              type="button"
-                              className={`joystick-btn joystick-up ${activePtzAction === 'tilt_up' ? 'active' : ''}`}
-                              onMouseDown={() => handlePtzPointerDown('tilt_up')}
-                              onMouseUp={() => handlePtzPointerUp('tilt_up')}
-                              onTouchStart={() => handlePtzPointerDown('tilt_up')}
-                              onTouchEnd={() => handlePtzPointerUp('tilt_up')}
-                              title="Tilt Up"
-                            >
-                              <ChevronUp size={22} />
-                            </button>
-
-                            {/* CARDINAL: LEFT */}
-                            <button
-                              type="button"
-                              className={`joystick-btn joystick-left ${activePtzAction === 'pan_left' ? 'active' : ''}`}
-                              onMouseDown={() => handlePtzPointerDown('pan_left')}
-                              onMouseUp={() => handlePtzPointerUp('pan_left')}
-                              onTouchStart={() => handlePtzPointerDown('pan_left')}
-                              onTouchEnd={() => handlePtzPointerUp('pan_left')}
-                              title="Pan Left"
-                            >
-                              <ChevronLeft size={22} />
-                            </button>
-
-                            {/* CENTER EMERGENCY STOP */}
-                            <button
-                              type="button"
-                              className="joystick-center-stop"
-                              onClick={handlePtzStop}
-                              title="Emergency Motor Halt"
-                            >
-                              STOP
-                            </button>
-
-                            {/* CARDINAL: RIGHT */}
-                            <button
-                              type="button"
-                              className={`joystick-btn joystick-right ${activePtzAction === 'pan_right' ? 'active' : ''}`}
-                              onMouseDown={() => handlePtzPointerDown('pan_right')}
-                              onMouseUp={() => handlePtzPointerUp('pan_right')}
-                              onTouchStart={() => handlePtzPointerDown('pan_right')}
-                              onTouchEnd={() => handlePtzPointerUp('pan_right')}
-                              title="Pan Right"
-                            >
-                              <ChevronRight size={22} />
-                            </button>
-
-                            {/* CARDINAL: DOWN */}
-                            <button
-                              type="button"
-                              className={`joystick-btn joystick-down ${activePtzAction === 'tilt_down' ? 'active' : ''}`}
-                              onMouseDown={() => handlePtzPointerDown('tilt_down')}
-                              onMouseUp={() => handlePtzPointerUp('tilt_down')}
-                              onTouchStart={() => handlePtzPointerDown('tilt_down')}
-                              onTouchEnd={() => handlePtzPointerUp('tilt_down')}
-                              title="Tilt Down"
-                            >
-                              <ChevronDown size={22} />
-                            </button>
-
-                            {/* DIAGONAL: UP-LEFT */}
-                            <button
-                              type="button"
-                              className={`joystick-diagonal-btn joystick-up-left ${activePtzAction === 'pan_up_left' ? 'active' : ''}`}
-                              onMouseDown={() => handlePtzPointerDown('pan_up_left')}
-                              onMouseUp={() => handlePtzPointerUp('pan_up_left')}
-                              onTouchStart={() => handlePtzPointerDown('pan_up_left')}
-                              onTouchEnd={() => handlePtzPointerUp('pan_up_left')}
-                              title="Pan Up-Left"
-                            >
-                              ↖
-                            </button>
-
-                            {/* DIAGONAL: UP-RIGHT */}
-                            <button
-                              type="button"
-                              className={`joystick-diagonal-btn joystick-up-right ${activePtzAction === 'pan_up_right' ? 'active' : ''}`}
-                              onMouseDown={() => handlePtzPointerDown('pan_up_right')}
-                              onMouseUp={() => handlePtzPointerUp('pan_up_right')}
-                              onTouchStart={() => handlePtzPointerDown('pan_up_right')}
-                              onTouchEnd={() => handlePtzPointerUp('pan_up_right')}
-                              title="Pan Up-Right"
-                            >
-                              ↗
-                            </button>
-
-                            {/* DIAGONAL: DOWN-LEFT */}
-                            <button
-                              type="button"
-                              className={`joystick-diagonal-btn joystick-down-left ${activePtzAction === 'pan_down_left' ? 'active' : ''}`}
-                              onMouseDown={() => handlePtzPointerDown('pan_down_left')}
-                              onMouseUp={() => handlePtzPointerUp('pan_down_left')}
-                              onTouchStart={() => handlePtzPointerDown('pan_down_left')}
-                              onTouchEnd={() => handlePtzPointerUp('pan_down_left')}
-                              title="Pan Down-Left"
-                            >
-                              ↙
-                            </button>
-
-                            {/* DIAGONAL: DOWN-RIGHT */}
-                            <button
-                              type="button"
-                              className={`joystick-diagonal-btn joystick-down-right ${activePtzAction === 'pan_down_right' ? 'active' : ''}`}
-                              onMouseDown={() => handlePtzPointerDown('pan_down_right')}
-                              onMouseUp={() => handlePtzPointerUp('pan_down_right')}
-                              onTouchStart={() => handlePtzPointerDown('pan_down_right')}
-                              onTouchEnd={() => handlePtzPointerUp('pan_down_right')}
-                              title="Pan Down-Right"
-                            >
-                              ↘
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Section: ULTRA-SLOW OPTICAL ZOOM */}
-                        <div>
-                          <div className="ptz-section-title">
-                            <span>SLOW OPTICAL ZOOM</span>
-                            <span style={{ fontSize: '0.68rem', color: '#059669', fontWeight: 600, textTransform: 'none' }}>
-                              Micro-stepped
-                            </span>
-                          </div>
-
-                          <div className="ptz-zoom-card">
-                            <div className="ptz-zoom-buttons">
-                              <button
-                                type="button"
-                                className={`ptz-zoom-btn ${activePtzAction === 'zoom_out' ? 'active' : ''}`}
-                                onMouseDown={() => handlePtzPointerDown('zoom_out', true)}
-                                onMouseUp={() => handlePtzPointerUp('zoom_out', true)}
-                                onTouchStart={() => handlePtzPointerDown('zoom_out', true)}
-                                onTouchEnd={() => handlePtzPointerUp('zoom_out', true)}
-                                title="Slow Zoom Out (Wide)"
-                              >
-                                <ZoomOut size={16} color={activePtzAction === 'zoom_out' ? '#ffffff' : '#059669'} />
-                                Zoom Out
-                              </button>
-
-                              <button
-                                type="button"
-                                className={`ptz-zoom-btn ${activePtzAction === 'zoom_in' ? 'active' : ''}`}
-                                onMouseDown={() => handlePtzPointerDown('zoom_in', true)}
-                                onMouseUp={() => handlePtzPointerUp('zoom_in', true)}
-                                onTouchStart={() => handlePtzPointerDown('zoom_in', true)}
-                                onTouchEnd={() => handlePtzPointerUp('zoom_in', true)}
-                                title="Slow Zoom In (Telephoto)"
-                              >
-                                <ZoomIn size={16} color={activePtzAction === 'zoom_in' ? '#ffffff' : '#059669'} />
-                                Zoom In
-                              </button>
-                            </div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-                              Calibrated gentle optical zoom preserves focus sharpness
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Section: PRESET POSITIONS (P1 - P5) */}
-                        <div>
-                          <div className="ptz-section-title">
-                            <span>PRESET POSITIONS</span>
-                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#059669' }}>P{activePreset} Active</span>
-                          </div>
-
-                          <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                            {[1, 2, 3, 4, 5].map((pNum) => (
-                              <button
-                                key={pNum}
-                                type="button"
-                                className={`preset-pill-btn ${activePreset === pNum ? 'active' : ''}`}
-                                onClick={() => handleGotoPreset(pNum)}
-                                title={`Move to Preset P${pNum}`}
-                              >
-                                P{pNum}
-                              </button>
-                            ))}
-                          </div>
-
-                          {/* Save Current Position as Preset */}
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            style={{ width: '100%', fontSize: '0.74rem', padding: '6px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                            onClick={handleSaveCurrentPreset}
-                            disabled={isSavingPreset}
-                          >
-                            <Save size={13} color="#059669" />
-                            {savePresetFeedback || (isSavingPreset ? 'Saving Preset...' : `Save Position as Preset P${activePreset}`)}
-                          </button>
-                        </div>
                       </aside>
                     )}
                   </div>
