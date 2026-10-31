@@ -2792,73 +2792,39 @@ function MainApp() {
             {/* Modal Body */}
             <div style={{ padding: '22px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Assign to Agent Selector */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
+                    Target Branch Agent <span style={{ color: '#059669' }}>*</span>
+                    {!user?.is_superadmin && (
+                      <span style={{ fontSize: '0.72rem', color: '#059669', marginLeft: '6px', fontWeight: 500 }}>
+                        (Locked to your assigned agent)
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    className="form-input"
+                    value={!user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId}
+                    onChange={(e) => setSelectedAgentId(e.target.value)}
+                    disabled={!user?.is_superadmin}
+                  >
+                    {agents.map((ag) => (
+                      <option key={ag.id} value={ag.id}>
+                        {ag.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {(() => {
-                  const pendingAgents = agents.filter(
-                    (ag) => !doneAgentIds.map(String).includes(String(ag.id)) && (ag.total_nvrs || 0) === 0
-                  );
-
-                  if (pendingAgents.length === 0) {
-                    return (
-                      <div style={{ textAlign: 'center', padding: '32px 16px', background: '#f8fafc', borderRadius: '10px', border: '1px dashed #cbd5e1' }}>
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', color: '#059669' }}>
-                          <CheckCircle2 size={24} />
-                        </div>
-                        <h4 style={{ margin: '0 0 6px 0', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-                          All Branch Agents Connected
-                        </h4>
-                        <p style={{ margin: '0 0 16px 0', fontSize: '0.80rem', color: '#64748b', lineHeight: 1.45, maxWidth: '340px', marginLeft: 'auto', marginRight: 'auto' }}>
-                          All registered branch agents have completed setup and are active.
-                        </p>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={() => {
-                            handleCloseModal();
-                            setActiveNav('monitor');
-                          }}
-                          style={{ padding: '8px 18px', fontSize: '0.84rem' }}
-                        >
-                          View Live Monitor
-                        </button>
-                      </div>
-                    );
-                  }
-
-                  const userAgentId = !user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId;
-                  const effectiveSelectedAgentId = pendingAgents.some((a) => String(a.id) === String(userAgentId))
-                    ? userAgentId
-                    : (pendingAgents[0]?.id || '');
-
-                  const activeAgent = pendingAgents.find((a) => String(a.id) === String(effectiveSelectedAgentId)) || pendingAgents[0];
+                  const currentAgentId = !user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId;
+                  const activeAgent = agents.find((a) => String(a.id) === String(currentAgentId)) || agents[0];
                   const activeAgentName = activeAgent?.name || 'Branch';
-                  const activeAgentId = activeAgent?.id || effectiveSelectedAgentId || 1;
+                  const activeAgentId = activeAgent?.id || 1;
+                  const isDone = doneAgentIds.map(String).includes(String(activeAgentId));
 
                   return (
                     <>
-                      {/* Assign to Agent Selector */}
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
-                          Target Branch Agent <span style={{ color: '#059669' }}>*</span>
-                          {!user?.is_superadmin && (
-                            <span style={{ fontSize: '0.72rem', color: '#059669', marginLeft: '6px', fontWeight: 500 }}>
-                              (Locked to your assigned agent)
-                            </span>
-                          )}
-                        </label>
-                        <select
-                          className="form-input"
-                          value={effectiveSelectedAgentId}
-                          onChange={(e) => setSelectedAgentId(e.target.value)}
-                          disabled={!user?.is_superadmin}
-                        >
-                          {pendingAgents.map((ag) => (
-                            <option key={ag.id} value={ag.id}>
-                              {ag.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
                       {/* Download Launcher */}
                       <div>
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -2903,43 +2869,39 @@ function MainApp() {
                         </div>
                       </div>
 
-                      {/* Real-time Connection Radar */}
-                      {(() => {
-                        if (agentDeployStatus?.has_nvr) {
-                          return (
-                            <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <CheckCircle2 size={22} color="#059669" />
-                                <div>
-                                  <div style={{ color: '#065f46', fontWeight: 700, fontSize: '0.90rem' }}>
-                                    Edge Agent Connected!
-                                  </div>
-                                  <div style={{ color: '#047857', fontSize: '0.78rem' }}>
-                                    {agentDeployStatus.name} &bull; {agentDeployStatus.nvr_count} NVR ({agentDeployStatus.total_cameras} Cameras) Online
-                                  </div>
+                      {/* Real-time Connection Radar - only show if not already marked done */}
+                      {!isDone && (
+                        agentDeployStatus?.has_nvr ? (
+                          <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <CheckCircle2 size={22} color="#059669" />
+                              <div>
+                                <div style={{ color: '#065f46', fontWeight: 700, fontSize: '0.90rem' }}>
+                                  Edge Agent Connected!
+                                </div>
+                                <div style={{ color: '#047857', fontSize: '0.78rem' }}>
+                                  {agentDeployStatus.name} &bull; {agentDeployStatus.nvr_count} NVR ({agentDeployStatus.total_cameras} Cameras) Online
                                 </div>
                               </div>
-                              <button
-                                type="button"
-                                className="btn btn-primary"
-                                onClick={() => handleDoneAgent(activeAgentId)}
-                                style={{ background: '#059669', padding: '7px 14px', fontSize: '0.82rem' }}
-                              >
-                                Done & View Live
-                              </button>
                             </div>
-                          );
-                        }
-
-                        return (
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={() => handleDoneAgent(activeAgentId)}
+                              style={{ background: '#059669', padding: '7px 14px', fontSize: '0.82rem' }}
+                            >
+                              Done & View Live
+                            </button>
+                          </div>
+                        ) : (
                           <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span className="spinner" style={{ fontSize: '18px' }}>⏳</span>
                             <span style={{ fontWeight: 600, fontSize: '0.86rem', color: '#334155' }}>
                               Waiting for Edge Agent to connect...
                             </span>
                           </div>
-                        );
-                      })()}
+                        )
+                      )}
                     </>
                   );
                 })()}
