@@ -89,8 +89,8 @@ def list_agents(
 
 
 @router.get("/download/epic-agent.py")
-def download_epic_agent_file(current_user: User = Depends(get_current_user)):
-    """Serve standalone epic-agent.py for client-side installation. F-01: Requires login."""
+def download_epic_agent_file():
+    """Serve standalone epic-agent.py for client-side installation."""
     possible_paths = [
         Path(__file__).resolve().parent.parent.parent.parent / "epic-agent.py",
         Path(__file__).resolve().parent.parent.parent / "epic-agent.py",
@@ -135,7 +135,6 @@ def download_agent_launcher(
     agent_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # F-01: auth required
 ):
     """Generate and serve a customized 1-Click Windows batch launcher (.bat) for this Agent."""
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
@@ -229,7 +228,6 @@ def download_agent_launcher_linux(
     agent_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # F-01: auth required
 ):
     """Generate and serve a customized 1-Click Linux shell launcher (.sh) for this Agent."""
     agent = db.query(Agent).filter(Agent.id == agent_id).first()

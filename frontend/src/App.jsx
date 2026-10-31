@@ -314,6 +314,28 @@ function MainApp() {
     setActiveNav('monitor');
   };
 
+  const handleDownloadLauncher = async (ext, agentId, agentName) => {
+    try {
+      const res = await apiRequest(`/api/agent/${agentId}/launcher.${ext}`);
+      if (res.ok) {
+        const text = await res.text();
+        const blob = new Blob([text], { type: ext === 'bat' ? 'application/x-bat' : 'application/x-sh' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `launch-agent-${agentName || 'branch'}.${ext}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        return;
+      }
+    } catch (err) {
+      console.warn('Blob launcher download fallback:', err);
+    }
+    window.location.href = `${API_BASE_URL || ''}/api/agent/${agentId}/launcher.${ext}`;
+  };
+
   // Live Monitor Grid Mode (persisted in cache)
   const [gridMode, setGridMode] = useState(() => {
     return localStorage.getItem('epic_command_grid_mode') || localStorage.getItem('epic_vision_grid_mode') || 'grid-2x2';
@@ -2828,44 +2850,45 @@ function MainApp() {
                       {/* Download Launcher */}
                       <div>
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                          <a
-                            href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.bat`}
-                            download={`launch-agent-${activeAgentName}.bat`}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadLauncher('bat', activeAgentId, activeAgentName)}
                             className="btn btn-primary"
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '8px',
-                              textDecoration: 'none',
                               padding: '11px 20px',
                               fontSize: '0.88rem',
                               fontWeight: 600,
                               background: '#059669',
                               color: '#ffffff',
-                              borderRadius: '6px'
+                              borderRadius: '6px',
+                              border: 'none',
+                              cursor: 'pointer'
                             }}
                           >
                             <Download size={16} />
                             Download Launcher (Windows .bat)
-                          </a>
-                          <a
-                            href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.sh`}
-                            download={`launch-agent-${activeAgentName}.sh`}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadLauncher('sh', activeAgentId, activeAgentName)}
                             className="btn btn-secondary"
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '8px',
-                              textDecoration: 'none',
                               padding: '11px 20px',
                               fontSize: '0.88rem',
                               fontWeight: 600,
-                              borderRadius: '6px'
+                              borderRadius: '6px',
+                              cursor: 'pointer'
                             }}
                           >
                             <Download size={16} />
                             Download Launcher (Linux .sh)
-                          </a>
+                          </button>
                         </div>
                       </div>
 
