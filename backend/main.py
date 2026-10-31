@@ -47,7 +47,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-ancestors 'none';"
     )
-    response.headers.pop("server", None)  # F-09: suppress Uvicorn/server version banner
+    if "server" in response.headers:`r`n        del response.headers["server"]  # F-09: suppress Uvicorn/server version banner
     return response
 
 # Register All API Routers cleanly
