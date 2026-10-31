@@ -132,21 +132,24 @@ def health():
     return {"status": "ok"}
 
 
+EPIC_AGENT_FILENAME = "epic-agent.py"
+
+
 @app.get("/epic-agent.py")
 def get_root_epic_agent():
     """Serve epic-agent.py directly from root URL for 1-Click Launchers."""
     from pathlib import Path
     from fastapi.responses import FileResponse, HTTPException
     possible_paths = [
-        Path(__file__).resolve().parent.parent / "epic-agent.py",
-        Path(__file__).resolve().parent / "epic-agent.py",
-        Path("/opt/epic-command/epic-agent.py"),
-        Path("/opt/epic-command/frontend/public/epic-agent.py"),
-        Path("/opt/epic-command/frontend/dist/epic-agent.py"),
+        Path(__file__).resolve().parent.parent / EPIC_AGENT_FILENAME,
+        Path(__file__).resolve().parent / EPIC_AGENT_FILENAME,
+        Path(f"/opt/epic-command/{EPIC_AGENT_FILENAME}"),
+        Path(f"/opt/epic-command/frontend/public/{EPIC_AGENT_FILENAME}"),
+        Path(f"/opt/epic-command/frontend/dist/{EPIC_AGENT_FILENAME}"),
     ]
     for p in possible_paths:
         if p.exists() and p.is_file():
-            return FileResponse(p, media_type="text/x-python", filename="epic-agent.py")
+            return FileResponse(p, media_type="text/x-python", filename=EPIC_AGENT_FILENAME)
     raise HTTPException(status_code=404, detail="epic-agent.py not found on server.")
 
 
