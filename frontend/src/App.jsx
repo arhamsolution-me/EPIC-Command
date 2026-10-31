@@ -271,6 +271,7 @@ function MainApp() {
   const [savedNvrs, setSavedNvrs] = useState([]);
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [copiedUrl, setCopiedUrl] = useState(null);
 
   // Edit NVR Modal State
   const [isEditNvrModalOpen, setIsEditNvrModalOpen] = useState(false);
@@ -319,7 +320,7 @@ function MainApp() {
       const res = await apiRequest(`/api/agent/${agentId}/launcher.${ext}`);
       if (res.ok) {
         const text = await res.text();
-        const blob = new Blob([text], { type: ext === 'bat' ? 'application/x-bat' : 'application/x-sh' });
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -327,7 +328,7 @@ function MainApp() {
         document.body.appendChild(link);
         link.click();
         link.remove();
-        window.URL.revokeObjectURL(url);
+        setTimeout(() => window.URL.revokeObjectURL(url), 2000);
         return;
       }
     } catch (err) {
