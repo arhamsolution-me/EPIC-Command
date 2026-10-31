@@ -741,18 +741,6 @@ function MainApp() {
     setTimeout(() => setCopiedUrl(null), 2000);
   };
 
-  // Close 3-dots dropdowns when clicking outside
-  useEffect(() => {
-    const handleGlobalClick = (e) => {
-      if (!e.target.closest('.action-dropdown-wrapper')) {
-        setOpenDropdownId(null);
-        setOpenAgentDropdownId(null);
-      }
-    };
-    document.addEventListener('click', handleGlobalClick);
-    return () => document.removeEventListener('click', handleGlobalClick);
-  }, []);
-
   // Collect all cameras across all configured NVRs
   const allCameras = savedNvrs.flatMap((nvr) =>
     (nvr.cameras || []).map((cam) => ({
@@ -1576,8 +1564,8 @@ function MainApp() {
 
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                             <span style={{ color: '#059669', fontWeight: 600, fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                              <span className="pulse-dot"></span>
-                                              Online
+                                              <span className="pulse-dot" />
+                                              <span>Online</span>
                                             </span>
                                             <button
                                               type="button"
