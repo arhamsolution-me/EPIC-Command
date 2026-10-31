@@ -95,6 +95,14 @@ class User(Base):
     role = relationship("Role", back_populates="users")
     assigned_agent = relationship("Agent", foreign_keys=[assigned_agent_id], backref="assigned_users")
 
+    @property
+    def effective_permissions(self):
+        if self.is_superadmin:
+            return ["*"]
+        if self.role and self.role.is_active:
+            return [rp.permission.key for rp in self.role.role_permissions if rp.permission and rp.permission.key]
+        return []
+
     def to_dict(self, include_permissions=True):
         permissions = []
         if include_permissions:

@@ -113,7 +113,11 @@ def require_permission(perm_key: str):
     def dependency(current_user: User = Depends(get_current_user)) -> User:
         if current_user.is_superadmin:
             return current_user
-        perms = current_user.effective_permissions
+        perms = []
+        if hasattr(current_user, "effective_permissions"):
+            perms = current_user.effective_permissions
+        elif current_user.role and current_user.role.is_active:
+            perms = [rp.permission.key for rp in current_user.role.role_permissions if rp.permission]
         if "*" in perms or perm_key in perms:
             return current_user
         raise HTTPException(
