@@ -311,6 +311,24 @@ function MainApp() {
   const [nvrAddMode, setNvrAddMode] = useState('edge_agent'); // 'edge_agent' | 'direct_ip'
   const [edgeCopied, setEdgeCopied] = useState(false);
   const [agentDeployStatus, setAgentDeployStatus] = useState(null);
+  const [doneAgentIds, setDoneAgentIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('epic_done_agent_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleDoneAgent = (agentId) => {
+    if (agentId) {
+      const updated = Array.from(new Set([...doneAgentIds, String(agentId)]));
+      setDoneAgentIds(updated);
+      localStorage.setItem('epic_done_agent_ids', JSON.stringify(updated));
+    }
+    handleCloseModal();
+    setActiveNav('monitor');
+  };
 
   // Live Monitor Grid Mode (persisted in cache)
   const [gridMode, setGridMode] = useState(() => {
@@ -2248,9 +2266,9 @@ function MainApp() {
                 flexWrap: 'wrap'
               }}>
                 {/* Left Filters */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '400px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '480px' }}>
                   {/* Search */}
-                  <div style={{ position: 'relative', flex: 1.3 }}>
+                  <div style={{ position: 'relative', flex: 2, minWidth: '280px', maxWidth: '420px' }}>
                     <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                     <input
                       type="text"
@@ -2466,19 +2484,31 @@ function MainApp() {
                                 </div>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
-                                  {/* PTZ Button: ONLY RENDERED IF CAMERA HAS PTZ AND USER HAS PTZ PERMISSION! */}
-                                  {cam.is_ptz && hasPermission('CAM_PTZ_CONTROL') && (
-                                    <button
-                                      type="button"
-                                      className="tile-ptz-btn"
-                                      onClick={() => {
-                                        setSelectedPtzCamId(cam.id);
-                                        setIsPtzOpen(true);
-                                      }}
-                                      title="PTZ Controls Available"
-                                    >
-                                      <Sliders size={12} />
-                                    </button>
+                                  {/* PTZ Button: Rendered with active or disabled state */}
+                                  {hasPermission('CAM_PTZ_CONTROL') && (
+                                    cam.is_ptz ? (
+                                      <button
+                                        type="button"
+                                        className="tile-ptz-btn"
+                                        onClick={() => {
+                                          setSelectedPtzCamId(cam.id);
+                                          setIsPtzOpen(true);
+                                        }}
+                                        title="PTZ Controls Active"
+                                      >
+                                        <Sliders size={12} />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="tile-icon-btn"
+                                        style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                                        title="No PTZ controls supported"
+                                        disabled
+                                      >
+                                        <Sliders size={12} color="#94a3b8" />
+                                      </button>
+                                    )
                                   )}
 
                                   {/* Snapshot Button */}
@@ -2583,8 +2613,8 @@ function MainApp() {
                               <span className="pulse-dot"></span>
                               <strong className="ptz-camera-badge-title">{selectedPtzCam.name}</strong>
                             </div>
-                            <span className="ptz-camera-badge-tag">
-                              {selectedPtzCam.is_ptz ? 'PTZ ACTIVE' : 'PTZ READY'}
+                            <span className="ptz-camera-badge-tag" style={{ background: selectedPtzCam.is_ptz ? '#ecfdf5' : '#f1f5f9', color: selectedPtzCam.is_ptz ? '#059669' : '#64748b', borderColor: selectedPtzCam.is_ptz ? '#a7f3d0' : '#cbd5e1' }}>
+                              {selectedPtzCam.is_ptz ? 'PTZ ACTIVE' : 'No PTZ controls supported'}
                             </span>
                           </div>
                           {allCameras.length > 1 && (
@@ -2615,8 +2645,14 @@ function MainApp() {
                           )}
                         </div>
 
+                        {!selectedPtzCam.is_ptz && (
+                          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px', textAlign: 'center', color: '#64748b', fontSize: '0.80rem', fontWeight: 600 }}>
+                            No PTZ controls supported for this camera
+                          </div>
+                        )}
+
                         {/* Section: Pan/Tilt Speed Velocity Slider */}
-                        <div>
+                        <div style={{ opacity: selectedPtzCam.is_ptz ? 1 : 0.45, pointerEvents: selectedPtzCam.is_ptz ? 'auto' : 'none' }}>
                           <div className="ptz-section-title">
                             <span>PAN / TILT SPEED</span>
                             <span className="font-mono" style={{ color: '#059669', fontSize: '0.82rem', fontWeight: 700 }}>{ptzSpeed}%</span>
@@ -2836,53 +2872,7 @@ function MainApp() {
                     )}
                   </div>
 
-                  {/* Full-Width Camera Grid Pagination Bar Across Entire Bottom (underneath both camera grid and PTZ controller) */}
-                  {filteredCameras.length > 0 && (
-                    <div className="camera-grid-pagination">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span className="pagination-info-text">
-                          Showing {filteredCameras.length === 0 ? 0 : startCameraIdx + 1}–{Math.min(startCameraIdx + camerasPerPage, filteredCameras.length)} of {filteredCameras.length} cameras
-                        </span>
-                        <select
-                          className="pagination-select"
-                          value={camerasPerPage}
-                          onChange={(e) => {
-                            setCamerasPerPage(Number(e.target.value));
-                            setCurrentCameraPage(1);
-                          }}
-                        >
-                          <option value={4}>4 / page</option>
-                          <option value={8}>8 / page</option>
-                          <option value={10}>10 / page</option>
-                          <option value={16}>16 / page</option>
-                        </select>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <button
-                          type="button"
-                          className="pagination-btn"
-                          disabled={validCameraPage <= 1}
-                          onClick={() => setCurrentCameraPage((p) => Math.max(1, p - 1))}
-                        >
-                          Prev
-                        </button>
-
-                        <div className="pagination-current-pill">
-                          {validCameraPage} / {totalCameraPages}
-                        </div>
-
-                        <button
-                          type="button"
-                          className="pagination-btn"
-                          disabled={validCameraPage >= totalCameraPages}
-                          onClick={() => setCurrentCameraPage((p) => Math.min(totalCameraPages, p + 1))}
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  {/* Bottom pagination removed - grid layout controls view */}
                 </>
               )}
             </div>
@@ -2899,11 +2889,16 @@ function MainApp() {
             <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ background: '#ecfdf5', padding: '7px', borderRadius: '7px' }}>
-                  <Cctv size={18} color="#059669" />
+                  <Terminal size={18} color="#059669" />
                 </div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>
-                  Add New NVR Device
-                </h3>
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                    Add Remote NVR (Branch Agent)
+                  </h3>
+                  <p style={{ fontSize: '0.74rem', color: '#64748b', margin: '2px 0 0 0' }}>
+                    Zero local IP or port-forwarding needed — connects securely via outbound reverse tunnels
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
@@ -2914,57 +2909,9 @@ function MainApp() {
               </button>
             </div>
 
-            {/* Deployment Method Tabs */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: '#f8fafc' }}>
-              <button
-                type="button"
-                onClick={() => setNvrAddMode('edge_agent')}
-                style={{
-                  flex: 1,
-                  padding: '12px 16px',
-                  border: 'none',
-                  background: nvrAddMode === 'edge_agent' ? '#ffffff' : 'transparent',
-                  borderBottom: nvrAddMode === 'edge_agent' ? '2px solid #059669' : '2px solid transparent',
-                  fontWeight: 600,
-                  fontSize: '0.84rem',
-                  color: nvrAddMode === 'edge_agent' ? '#059669' : 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
-              >
-                <Terminal size={15} />
-                <span>Remote Connection</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setNvrAddMode('direct_ip')}
-                style={{
-                  flex: 1,
-                  padding: '12px 16px',
-                  border: 'none',
-                  background: nvrAddMode === 'direct_ip' ? '#ffffff' : 'transparent',
-                  borderBottom: nvrAddMode === 'direct_ip' ? '2px solid #059669' : '2px solid transparent',
-                  fontWeight: 600,
-                  fontSize: '0.84rem',
-                  color: nvrAddMode === 'direct_ip' ? '#059669' : 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
-              >
-                <Radio size={15} />
-                <span>Direct Local IP (Same Subnet)</span>
-              </button>
-            </div>
-
             {/* Modal Body */}
             <div style={{ padding: '22px' }}>
-              {nvrAddMode === 'edge_agent' ? (
+              (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {/* Assign to Agent Selector */}
                   <div>
@@ -3041,8 +2988,8 @@ function MainApp() {
                           </div>
                         </div>
 
-                        {/* Real-time Connection Radar */}
-                        {agentDeployStatus?.has_nvr ? (
+                        {/* Real-time Connection Radar - hidden once marked done */}
+                        {agentDeployStatus?.has_nvr && !doneAgentIds.includes(String(activeAgentId)) ? (
                           <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <CheckCircle2 size={22} color="#059669" />
@@ -3051,27 +2998,27 @@ function MainApp() {
                                   Edge Agent Connected!
                                 </div>
                                 <div style={{ color: '#047857', fontSize: '0.78rem' }}>
-                                  {agentDeployStatus.name} • {agentDeployStatus.nvr_count} NVR ({agentDeployStatus.total_cameras} Cameras) Online
+                                  {agentDeployStatus.name} &bull; {agentDeployStatus.nvr_count} NVR ({agentDeployStatus.total_cameras} Cameras) Online
                                 </div>
                               </div>
                             </div>
                             <button
                               type="button"
                               className="btn btn-primary"
-                              onClick={handleCloseModal}
+                              onClick={() => handleDoneAgent(activeAgentId)}
                               style={{ background: '#059669', padding: '7px 14px', fontSize: '0.82rem' }}
                             >
                               Done & View Live
                             </button>
                           </div>
-                        ) : (
+                        ) : !doneAgentIds.includes(String(activeAgentId)) ? (
                           <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span className="spinner" style={{ fontSize: '18px' }}>⏳</span>
                             <span style={{ fontWeight: 600, fontSize: '0.86rem', color: '#334155' }}>
                               Waiting...
                             </span>
                           </div>
-                        )}
+                        ) : null}
                       </>
                     );
                   })()}
@@ -3083,241 +3030,7 @@ function MainApp() {
                     </button>
                   </div>
                 </div>
-              ) : (
-                /* Direct Local IP Mode */
-                !scanResult ? (
-                  <form onSubmit={handleProbe} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.84rem' }}>
-                      Enter the local NVR IP address and credentials. The central server will connect directly across the local network subnet.
-                    </p>
-
-                    {/* Assign to Agent Selector */}
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
-                        Assign to Agent <span style={{ color: '#059669' }}>*</span>
-                        {!user?.is_superadmin && (
-                          <span style={{ fontSize: '0.72rem', color: '#059669', marginLeft: '6px', fontWeight: 500 }}>
-                            (Locked to your assigned agent)
-                          </span>
-                        )}
-                      </label>
-                      <select
-                        className="form-input"
-                        value={!user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId}
-                        onChange={(e) => {
-                          const newAgId = e.target.value;
-                          setSelectedAgentId(newAgId);
-                          const ag = agents.find((a) => String(a.id) === String(newAgId));
-                          const cleanVal = (v) => (v && v !== '—' && v !== '-' ? v : '');
-                          setNvrProvince(cleanVal(ag?.province));
-                          setNvrCity(cleanVal(ag?.city));
-                          setNvrArea(cleanVal(ag?.area));
-                          setNvrSite(cleanVal(ag?.site));
-                        }}
-                        disabled={isScanning || !user?.is_superadmin}
-                        required
-                      >
-                        {agents.map((ag) => (
-                          <option key={ag.id} value={ag.id}>
-                            {ag.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
-                        NVR Device Name <span style={{ color: '#059669' }}>*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Enter NVR name"
-                        value={nvrName}
-                        onChange={(e) => setNvrName(e.target.value)}
-                        disabled={isScanning}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
-                        NVR IP Address / Host <span style={{ color: '#059669' }}>*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="form-input font-mono"
-                        placeholder="Enter IP address"
-                        value={ip}
-                        onChange={(e) => setIp(e.target.value)}
-                        disabled={isScanning}
-                        required
-                      />
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
-                          Username <span style={{ color: '#059669' }}>*</span>
-                        </label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          placeholder="Enter username"
-                          value={username}
-                          onChange={(e) => setUsername(e.target.value)}
-                          disabled={isScanning}
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
-                          Password
-                        </label>
-                        <div style={{ position: 'relative' }}>
-                          <input
-                            type={showPassword ? 'text' : 'password'}
-                            className="form-input"
-                            placeholder="Enter password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            disabled={isScanning}
-                            style={{ paddingRight: '34px' }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                          >
-                            {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Advanced Custom Ports */}
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvanced(!showAdvanced)}
-                        style={{ background: 'none', border: 'none', color: '#059669', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
-                      >
-                        <Sliders size={13} />
-                        {showAdvanced ? 'Hide Custom Ports' : 'Advanced: Specify Custom Ports'}
-                      </button>
-
-                      {showAdvanced && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                          <div>
-                            <label style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '3px' }}>HTTP Port (Auto 80)</label>
-                            <input type="number" className="form-input font-mono" placeholder="80" value={customPort} onChange={(e) => setCustomPort(e.target.value)} />
-                          </div>
-                          <div>
-                            <label style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '3px' }}>RTSP Port (Auto 554)</label>
-                            <input type="number" className="form-input font-mono" placeholder="554" value={customRtspPort} onChange={(e) => setCustomRtspPort(e.target.value)} />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Error Notification */}
-                    {scanError && (
-                      <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                        <AlertTriangle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
-                        <div>
-                          <h5 style={{ color: '#b91c1c', fontSize: '0.82rem', fontWeight: 600 }}>Connection Failed</h5>
-                          <p style={{ color: '#dc2626', fontSize: '0.78rem', marginTop: '2px' }}>{scanError}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
-                      <button type="button" className="btn btn-secondary" onClick={handleCloseModal} disabled={isScanning}>
-                        Cancel
-                      </button>
-                      <button type="submit" className="btn btn-primary" disabled={isScanning}>
-                        {isScanning ? (
-                          <>
-                            <span className="spinner">⏳</span>
-                            Connecting & Probing...
-                          </>
-                        ) : (
-                          <>
-                            <Plus size={15} />
-                            Connect & Discover
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  /* Step 2: Show Discovered Cameras & Confirm Save */
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div>
-                        <span style={{ color: '#059669', fontWeight: 600, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={13} />
-                          NVR Connected Successfully
-                        </span>
-                        <h4 style={{ fontSize: '1.05rem', fontWeight: 700, marginTop: '2px', color: '#0f172a' }}>
-                          {scanResult.total_channels} Cameras Discovered
-                        </h4>
-                      </div>
-                      <div style={{ textAlign: 'right', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                        <div>RTSP: <strong className="font-mono">{scanResult.rtsp_port}</strong></div>
-                        <div style={{ marginTop: '2px' }}>
-                          Agent: <strong style={{ color: '#059669' }}>{agents.find(a => String(a.id) === String(selectedAgentId))?.name || 'Assigned'}</strong>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                        NVR Display Name
-                      </label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={nvrName}
-                        onChange={(e) => setNvrName(e.target.value)}
-                      />
-                    </div>
-
-                    {/* Discovered Cameras in clean rows */}
-                    <div className="camera-sub-list" style={{ maxHeight: '240px', overflowY: 'auto' }}>
-                      {scanResult.cameras.map((cam) => (
-                        <div key={cam.channel_number} className="camera-sub-item">
-                          <span style={{ fontWeight: 700, color: '#059669', fontSize: '0.78rem', minWidth: '50px' }}>
-                            CH {cam.channel_number}
-                          </span>
-                          <span style={{ fontWeight: 600, color: '#0f172a', minWidth: '90px' }}>
-                            {cam.name}
-                          </span>
-                          <span className="font-mono" style={{ color: '#047857', fontSize: '0.72rem', flex: 1, margin: '0 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {cam.rtsp_stream_url}
-                          </span>
-                          <span style={{ color: '#059669', fontWeight: 600, fontSize: '0.72rem' }}>
-                            ● Reachable
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Confirm & Save Button */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
-                      <button type="button" className="btn btn-secondary" onClick={() => setScanResult(null)} disabled={isSaving}>
-                        Back
-                      </button>
-                      <button type="button" className="btn btn-success" onClick={handleConfirmSave} disabled={isSaving}>
-                        {isSaving ? 'Saving...' : 'Confirm & Save to Database'}
-                      </button>
-                    </div>
-                  </div>
-                )
-              )}
-            </div>
+              )</div>
 
           </div>
         </div>

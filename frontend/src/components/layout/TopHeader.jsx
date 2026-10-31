@@ -72,46 +72,8 @@ export default function TopHeader({
         </h1>
       </div>
 
-      {/* Right Controls: Sync Button + User Profile Group */}
+      {/* Right Controls: User Profile Group */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          title="Auto-Sync active (Click to refresh data immediately)"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: isRefreshing ? '#ecfdf5' : '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '6px',
-            padding: '6px 12px',
-            fontSize: '0.78rem',
-            fontWeight: 600,
-            color: isRefreshing ? '#059669' : '#475569',
-            cursor: isRefreshing ? 'wait' : 'pointer',
-            transition: 'all 0.15s ease',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-          }}
-          onMouseEnter={(e) => {
-            if (!isRefreshing) {
-              e.currentTarget.style.borderColor = '#10b981';
-              e.currentTarget.style.color = '#059669';
-              e.currentTarget.style.background = '#f0fdf4';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isRefreshing) {
-              e.currentTarget.style.borderColor = '#e2e8f0';
-              e.currentTarget.style.color = '#475569';
-              e.currentTarget.style.background = '#ffffff';
-            }
-          }}
-        >
-          <RefreshCw size={13} className={isRefreshing ? 'spin-icon' : ''} color={isRefreshing ? '#059669' : '#64748b'} />
-          <span>{isRefreshing ? 'Syncing...' : 'Sync'}</span>
-        </button>
 
         <div
           ref={dropdownRef}
