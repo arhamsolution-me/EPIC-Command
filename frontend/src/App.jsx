@@ -272,6 +272,7 @@ function MainApp() {
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [copiedUrl, setCopiedUrl] = useState(null);
+  const [copiedCmd, setCopiedCmd] = useState(false);
 
   // Edit NVR Modal State
   const [isEditNvrModalOpen, setIsEditNvrModalOpen] = useState(false);
@@ -2889,6 +2890,31 @@ function MainApp() {
                           >
                             <Download size={16} />
                             Download Launcher (Linux .sh)
+                          </button>
+                        </div>
+
+                        {/* Direct CMD / Terminal Command (Zero-Download alternative) */}
+                        <div style={{ background: '#0f172a', borderRadius: '6px', padding: '10px 14px', marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                          <div style={{ overflow: 'hidden', flex: 1 }}>
+                            <div style={{ fontSize: '0.70rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em', marginBottom: '3px' }}>
+                              Direct Command Line Option (Paste into CMD / Terminal)
+                            </div>
+                            <code style={{ color: '#34d399', fontSize: '0.76rem', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                              python epic-agent.py --server {window.location.origin} --agent &quot;{activeAgentName}&quot; --agent-id {activeAgentId}
+                            </code>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`python epic-agent.py --server ${window.location.origin} --agent "${activeAgentName}" --agent-id ${activeAgentId}`);
+                              setCopiedCmd(true);
+                              setTimeout(() => setCopiedCmd(false), 2000);
+                            }}
+                            style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '4px', padding: '6px 10px', color: '#f8fafc', fontSize: '0.74rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}
+                            title="Copy Command to Clipboard"
+                          >
+                            {copiedCmd ? <Check size={13} color="#34d399" /> : <Copy size={13} />}
+                            {copiedCmd ? 'Copied!' : 'Copy CMD'}
                           </button>
                         </div>
                       </div>
