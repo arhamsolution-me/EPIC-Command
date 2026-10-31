@@ -326,7 +326,7 @@ function MainApp() {
         link.download = `launch-agent-${agentName || 'branch'}.${ext}`;
         document.body.appendChild(link);
         link.click();
-        document.body.removeChild(link);
+        link.remove();
         window.URL.revokeObjectURL(url);
         return;
       }
