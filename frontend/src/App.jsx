@@ -7,8 +7,6 @@ import {
   Trash2,
   Copy,
   Check,
-  Eye,
-  EyeOff,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -20,20 +18,13 @@ import {
   MoreVertical,
   Monitor,
   Maximize2,
-  Volume2,
-  VolumeX,
   Camera as CameraIcon,
-  Play,
   Bot,
-  Shield,
   Search,
   Filter,
   ZoomIn,
   ZoomOut,
-  Radio,
-  MapPin,
   Save,
-  Users,
   Download,
   Terminal
 } from 'lucide-react';
@@ -53,11 +44,33 @@ import { apiRequest, API_BASE_URL, WEBRTC_STREAM_BASE } from './services/api';
 
 
 /**
+ * Helper to wait for ICE gathering completion without deeply nested functions.
+ */
+function waitForIceGathering(pc, timeoutMs = 800) {
+  if (pc.iceGatheringState === 'complete') {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const handler = () => {
+      if (pc.iceGatheringState === 'complete') {
+        pc.removeEventListener('icegatheringstatechange', handler);
+        resolve();
+      }
+    };
+    pc.addEventListener('icegatheringstatechange', handler);
+    setTimeout(() => {
+      pc.removeEventListener('icegatheringstatechange', handler);
+      resolve();
+    }, timeoutMs);
+  });
+}
+
+/**
  * Native WebRTC (WHEP) Live Camera Player
  * Connects directly to MediaMTX via WHEP protocol.
  * Sub-second latency (< 200ms), Zero Docker, Zero CPU transcoding.
  */
-function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
+function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true }) {
   const videoRef = useRef(null);
   const [streamStatus, setStreamStatus] = useState('connecting'); // 'connecting' | 'live' | 'error'
   const [retryKey, setRetryKey] = useState(0);
@@ -95,18 +108,7 @@ function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
         await pc.setLocalDescription(offer);
 
         // Wait for ICE gathering to complete so all candidates are in offer SDP
-        if (pc.iceGatheringState !== 'complete') {
-          await new Promise((resolve) => {
-            function check() {
-              if (pc.iceGatheringState === 'complete') {
-                pc.removeEventListener('icegatheringstatechange', check);
-                resolve();
-              }
-            }
-            pc.addEventListener('icegatheringstatechange', check);
-            setTimeout(resolve, 800); // 800ms gathering window
-          });
-        }
+        await waitForIceGathering(pc, 800);
 
         if (isCancelled) return;
 
@@ -153,13 +155,16 @@ function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
         autoPlay
         playsInline
         muted={isMuted}
+        title={camName}
         style={{
           width: '100%',
           height: '100%',
           objectFit: 'contain',
           display: streamStatus === 'live' ? 'block' : 'none'
         }}
-      />
+      >
+        <track kind="captions" />
+      </video>
 
       {streamStatus === 'connecting' && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: '#94a3b8' }}>
@@ -187,7 +192,7 @@ function LiveWebRtcCamera({ streamPath, camName, isMuted = true }) {
 }
 
 function MainApp() {
-  const { user, isAuthenticated, isLoading, logout, hasPermission, refreshProfile } = useAuth();
+  const { user, isAuthenticated, isLoading, hasPermission, refreshProfile } = useAuth();
 
   // Page caching: persist active tab across page refreshes
   const [activeNav, setActiveNav] = useState(() => {
@@ -243,7 +248,6 @@ function MainApp() {
 
   // Agents State
   const [agents, setAgents] = useState([]);
-  const [isLoadingAgents, setIsLoadingAgents] = useState(false);
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
   const [newAgentName, setNewAgentName] = useState('');
   const [isCreatingAgent, setIsCreatingAgent] = useState(false);
@@ -265,7 +269,6 @@ function MainApp() {
 
   // Saved NVRs
   const [savedNvrs, setSavedNvrs] = useState([]);
-  const [isLoadingNvrs, setIsLoadingNvrs] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [openDropdownId, setOpenDropdownId] = useState(null);
 
@@ -285,36 +288,13 @@ function MainApp() {
   const [isSavingNvr, setIsSavingNvr] = useState(false);
   const [editNvrError, setEditNvrError] = useState(null);
 
-  // Add NVR Modal
+  // Add NVR Modal (Dedicated Remote Edge Agent Mode)
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [ip, setIp] = useState('');
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [customPort, setCustomPort] = useState('');
-  const [customRtspPort, setCustomRtspPort] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  // Modal Probing & Save States
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState(null);
-  const [scanError, setScanError] = useState(null);
-  const [nvrName, setNvrName] = useState('');
-  const [nvrProvince, setNvrProvince] = useState('');
-  const [nvrCity, setNvrCity] = useState('');
-  const [nvrArea, setNvrArea] = useState('');
-  const [nvrSite, setNvrSite] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(null);
-
-  // Edge Agent Mode in Add NVR Modal
-  const [nvrAddMode, setNvrAddMode] = useState('edge_agent'); // 'edge_agent' | 'direct_ip'
-  const [edgeCopied, setEdgeCopied] = useState(false);
   const [agentDeployStatus, setAgentDeployStatus] = useState(null);
   const [doneAgentIds, setDoneAgentIds] = useState(() => {
     try {
       const saved = localStorage.getItem('epic_done_agent_ids');
-      return saved ? JSON.parse(saved) : [];
+      return saved ? JSON.parse(saved).map(String) : [];
     } catch {
       return [];
     }
@@ -322,12 +302,17 @@ function MainApp() {
 
   const handleDoneAgent = (agentId) => {
     if (agentId) {
-      const updated = Array.from(new Set([...doneAgentIds, String(agentId)]));
+      const updated = Array.from(new Set([...doneAgentIds.map(String), String(agentId)]));
       setDoneAgentIds(updated);
-      localStorage.setItem('epic_done_agent_ids', JSON.stringify(updated));
+      try {
+        localStorage.setItem('epic_done_agent_ids', JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save done agent IDs:', err);
+      }
     }
     handleCloseModal();
     setActiveNav('monitor');
+  };
   };
 
   // Live Monitor Grid Mode (persisted in cache)
@@ -346,7 +331,7 @@ function MainApp() {
       ? user.assigned_agent_id
       : (selectedAgentId || (agents[0] && agents[0].id));
 
-    if (isModalOpen && nvrAddMode === 'edge_agent' && targetId) {
+    if (isModalOpen && targetId) {
       const pollStatus = async () => {
         try {
           const res = await apiRequest(`/api/agent/${targetId}/status`);
@@ -366,7 +351,7 @@ function MainApp() {
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isModalOpen, nvrAddMode, selectedAgentId, agents, user]);
+  }, [isModalOpen, selectedAgentId, agents, user]);
 
   // Close actions dropdowns on outside click
   useEffect(() => {
@@ -380,15 +365,13 @@ function MainApp() {
     return () => document.removeEventListener('click', handleGlobalClick);
   }, []);
 
-  const [isMuted, setIsMuted] = useState(true);
+  const isMuted = true;
 
   // PTZ and Live Monitor Controls State
   const [isPtzOpen, setIsPtzOpen] = useState(true);
   const [selectedPtzCamId, setSelectedPtzCamId] = useState(null);
   const [ptzSpeed, setPtzSpeed] = useState(50);
-  const [ptzZoomLevel, setPtzZoomLevel] = useState(50);
   const [activePreset, setActivePreset] = useState(1);
-  const [ptzPresets, setPtzPresets] = useState([]);
   const [cameraSearch, setCameraSearch] = useState('');
   const [filterProvince, setFilterProvince] = useState('');
   const [filterCity, setFilterCity] = useState('');
@@ -479,13 +462,13 @@ function MainApp() {
   useEffect(() => {
     if (!isAuthenticated) return;
     const syncInterval = setInterval(() => {
-      if (!isScanning && !isSaving && !isModalOpen && !isAgentModalOpen) {
+      if (!isModalOpen && !isAgentModalOpen) {
         fetchNvrs();
         fetchAgents();
       }
     }, 8000);
     return () => clearInterval(syncInterval);
-  }, [isAuthenticated, isScanning, isSaving, isModalOpen, isAgentModalOpen]);
+  }, [isAuthenticated, isModalOpen, isAgentModalOpen]);
 
   const fetchLocationsSummary = async () => {
     try {
@@ -500,7 +483,6 @@ function MainApp() {
   };
 
   const fetchAgents = async () => {
-    setIsLoadingAgents(true);
     try {
       const res = await apiRequest('/api/agent/list');
       if (res.ok) {
@@ -512,8 +494,6 @@ function MainApp() {
       }
     } catch (err) {
       console.error('Failed to load agents:', err);
-    } finally {
-      setIsLoadingAgents(false);
     }
   };
 
@@ -624,7 +604,6 @@ function MainApp() {
   };
 
   const fetchNvrs = async () => {
-    setIsLoadingNvrs(true);
     try {
       const res = await apiRequest('/api/nvr/list');
       if (res.ok) {
@@ -633,8 +612,6 @@ function MainApp() {
       }
     } catch (err) {
       console.error('Failed to load NVRs:', err);
-    } finally {
-      setIsLoadingNvrs(false);
     }
   };
 
@@ -653,136 +630,17 @@ function MainApp() {
       return;
     }
     setIsModalOpen(true);
-    setNvrAddMode('edge_agent');
     setAgentDeployStatus(null);
-    setEdgeCopied(false);
-    setScanResult(null);
-    setScanError(null);
 
     const targetAgId = (!user?.is_superadmin && user?.assigned_agent_id)
       ? user.assigned_agent_id
       : (selectedAgentId || agents[0]?.id);
     setSelectedAgentId(targetAgId);
-
-    // Auto-populate location from the selected agent
-    const cleanVal = (v) => (v && v !== '—' && v !== '-' ? v : '');
-    const ag = agents.find((a) => String(a.id) === String(targetAgId)) || agents[0];
-    setNvrProvince(cleanVal(ag?.province));
-    setNvrCity(cleanVal(ag?.city));
-    setNvrArea(cleanVal(ag?.area));
-    setNvrSite(cleanVal(ag?.site));
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setAgentDeployStatus(null);
-    setEdgeCopied(false);
-    setScanResult(null);
-    setScanError(null);
-    setIp('');
-    setPassword('');
-    setNvrName('');
-    setNvrProvince('');
-    setNvrCity('');
-    setNvrArea('');
-    setNvrSite('');
-  };
-
-  // Step 1: Probe NVR
-  const handleProbe = async (e) => {
-    e.preventDefault();
-    if (!ip.trim() || !username.trim()) {
-      setScanError('Please enter an IP address and username.');
-      return;
-    }
-
-    setIsScanning(true);
-    setScanResult(null);
-    setScanError(null);
-
-    try {
-      const payload = {
-        ip: ip.trim(),
-        username: username.trim(),
-        password: password,
-        port: customPort ? parseInt(customPort, 10) : null,
-        rtsp_port: customRtspPort ? parseInt(customRtspPort, 10) : null
-      };
-
-      const res = await fetch(`${API_BASE_URL}/api/nvr/probe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.detail || 'Unable to connect to NVR.');
-      }
-
-      setScanResult(data);
-      if (!nvrName.trim()) {
-        const agObj = agents.find((a) => String(a.id) === String(selectedAgent));
-        const defaultName = agObj ? `${agObj.name} NVR` : 'NVR Device';
-        setNvrName(defaultName);
-      }
-    } catch (err) {
-      setScanError(err.message);
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  // Step 2: Confirm and Save to Database
-  const handleConfirmSave = async () => {
-    if (!scanResult) return;
-
-    setIsSaving(true);
-    try {
-      const effectiveAgId = (!user?.is_superadmin && user?.assigned_agent_id)
-        ? user.assigned_agent_id
-        : (selectedAgentId ? parseInt(selectedAgentId, 10) : (agents[0]?.id || null));
-
-      const targetAgent = agents.find((a) => String(a.id) === String(effectiveAgId)) || agents[0];
-      const cleanVal = (v) => (v && v !== '—' && v !== '-' ? v : '');
-      const payload = {
-        agent_id: effectiveAgId,
-        name: nvrName.trim() || `${targetAgent?.name || 'Branch'} NVR`,
-        ip: scanResult.ip,
-        port: scanResult.port || 80,
-        rtsp_port: scanResult.rtsp_port || 554,
-        username: username,
-        password: password,
-        status: 'online',
-        vendor: scanResult.vendor || 'DAHUA',
-        province: nvrProvince || cleanVal(targetAgent?.province) || '',
-        city: nvrCity || cleanVal(targetAgent?.city) || '',
-        area: nvrArea || cleanVal(targetAgent?.area) || '',
-        site: nvrSite || cleanVal(targetAgent?.site) || '',
-        cameras: scanResult.cameras || []
-      };
-
-      const res = await apiRequest('/api/nvr/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.detail || 'Failed to save NVR.');
-      }
-
-      await fetchNvrs();
-      await fetchAgents();
-      handleCloseModal();
-    } catch (err) {
-      alert(`Error saving to database: ${err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   // Delete NVR
@@ -1080,18 +938,6 @@ function MainApp() {
       console.error('Goto preset error:', err);
     }
   };
-
-  // Fetch presets when selected camera changes
-  useEffect(() => {
-    if (selectedPtzCam?.id && hasPermission('CAM_PTZ_CONTROL')) {
-      apiRequest(`/api/ptz/presets/${selectedPtzCam.id}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setPtzPresets(data.presets || []);
-        })
-        .catch(() => setPtzPresets([]));
-    }
-  }, [selectedPtzCam?.id]);
 
   // Click on camera tile: select camera for PTZ (keep panel open if user opened it!)
   const handleCameraTileClick = (cam) => {
@@ -2474,7 +2320,14 @@ function MainApp() {
                             <div
                               key={cam.id || idx}
                               className={`camera-tile ${isSelected ? 'selected-ptz' : ''}`}
+                              role="button"
+                              tabIndex={0}
                               onClick={() => handleCameraTileClick(cam)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  handleCameraTileClick(cam);
+                                }
+                              }}
                             >
                               {/* Top Overlay */}
                               <div className="camera-tile-header">
@@ -2483,7 +2336,7 @@ function MainApp() {
                                   <strong style={{ fontSize: '0.85rem' }}>{cam.name}</strong>
                                 </div>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                   {/* PTZ Button: Rendered with active or disabled state */}
                                   {hasPermission('CAM_PTZ_CONTROL') && (
                                     cam.is_ptz ? (
@@ -2882,8 +2735,17 @@ function MainApp() {
 
       {/* ADD NVR MODAL DIALOG */}
       {isModalOpen && (
-        <div className="modal-overlay" onClick={handleCloseModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseModal();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') handleCloseModal();
+          }}
+        >
+          <div className="modal-content">
 
             {/* Modal Header */}
             <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2911,126 +2773,134 @@ function MainApp() {
 
             {/* Modal Body */}
             <div style={{ padding: '22px' }}>
-              (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Assign to Agent Selector */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
-                      Target Branch Agent <span style={{ color: '#059669' }}>*</span>
-                      {!user?.is_superadmin && (
-                        <span style={{ fontSize: '0.72rem', color: '#059669', marginLeft: '6px', fontWeight: 500 }}>
-                          (Locked to your assigned agent)
-                        </span>
-                      )}
-                    </label>
-                    <select
-                      className="form-input"
-                      value={!user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId}
-                      onChange={(e) => setSelectedAgentId(e.target.value)}
-                      disabled={!user?.is_superadmin}
-                    >
-                      {agents.map((ag) => (
-                        <option key={ag.id} value={ag.id}>
-                          {ag.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Assign to Agent Selector */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '5px', color: 'var(--text-secondary)' }}>
+                    Target Branch Agent <span style={{ color: '#059669' }}>*</span>
+                    {!user?.is_superadmin && (
+                      <span style={{ fontSize: '0.72rem', color: '#059669', marginLeft: '6px', fontWeight: 500 }}>
+                        (Locked to your assigned agent)
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    className="form-input"
+                    value={!user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId}
+                    onChange={(e) => setSelectedAgentId(e.target.value)}
+                    disabled={!user?.is_superadmin}
+                  >
+                    {agents.map((ag) => (
+                      <option key={ag.id} value={ag.id}>
+                        {ag.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                  {(() => {
-                    const activeAgent = agents.find((a) => String(a.id) === String(!user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId)) || agents[0];
-                    const activeAgentName = activeAgent?.name || 'Branch';
-                    const activeAgentId = activeAgent?.id || 1;
+                {(() => {
+                  const activeAgent = agents.find((a) => String(a.id) === String(!user?.is_superadmin && user?.assigned_agent_id ? user.assigned_agent_id : selectedAgentId)) || agents[0];
+                  const activeAgentName = activeAgent?.name || 'Branch';
+                  const activeAgentId = activeAgent?.id || 1;
 
-                    return (
-                      <>
-                        {/* Download Launcher */}
-                        <div>
-                          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                            <a
-                              href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.bat`}
-                              download={`launch-agent-${activeAgentName}.bat`}
-                              className="btn btn-primary"
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                textDecoration: 'none',
-                                padding: '11px 20px',
-                                fontSize: '0.88rem',
-                                fontWeight: 600,
-                                background: '#059669',
-                                color: '#ffffff',
-                                borderRadius: '6px'
-                              }}
-                            >
-                              <Download size={16} />
-                              Download Launcher (Windows .bat)
-                            </a>
-                            <a
-                              href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.sh`}
-                              download={`launch-agent-${activeAgentName}.sh`}
-                              className="btn btn-secondary"
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                textDecoration: 'none',
-                                padding: '11px 20px',
-                                fontSize: '0.88rem',
-                                fontWeight: 600,
-                                borderRadius: '6px'
-                              }}
-                            >
-                              <Download size={16} />
-                              Download Launcher (Linux .sh)
-                            </a>
-                          </div>
+                  return (
+                    <>
+                      {/* Download Launcher */}
+                      <div>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                          <a
+                            href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.bat`}
+                            download={`launch-agent-${activeAgentName}.bat`}
+                            className="btn btn-primary"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              textDecoration: 'none',
+                              padding: '11px 20px',
+                              fontSize: '0.88rem',
+                              fontWeight: 600,
+                              background: '#059669',
+                              color: '#ffffff',
+                              borderRadius: '6px'
+                            }}
+                          >
+                            <Download size={16} />
+                            Download Launcher (Windows .bat)
+                          </a>
+                          <a
+                            href={`${API_BASE_URL || ''}/api/agent/${activeAgentId}/launcher.sh`}
+                            download={`launch-agent-${activeAgentName}.sh`}
+                            className="btn btn-secondary"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              textDecoration: 'none',
+                              padding: '11px 20px',
+                              fontSize: '0.88rem',
+                              fontWeight: 600,
+                              borderRadius: '6px'
+                            }}
+                          >
+                            <Download size={16} />
+                            Download Launcher (Linux .sh)
+                          </a>
                         </div>
+                      </div>
 
-                        {/* Real-time Connection Radar - hidden once marked done */}
-                        {agentDeployStatus?.has_nvr && !doneAgentIds.includes(String(activeAgentId)) ? (
-                          <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <CheckCircle2 size={22} color="#059669" />
-                              <div>
-                                <div style={{ color: '#065f46', fontWeight: 700, fontSize: '0.90rem' }}>
-                                  Edge Agent Connected!
-                                </div>
-                                <div style={{ color: '#047857', fontSize: '0.78rem' }}>
-                                  {agentDeployStatus.name} &bull; {agentDeployStatus.nvr_count} NVR ({agentDeployStatus.total_cameras} Cameras) Online
+                      {/* Real-time Connection Radar - hidden once marked done */}
+                      {(() => {
+                        const isDone = doneAgentIds.map(String).includes(String(activeAgentId));
+                        if (isDone) return null;
+
+                        if (agentDeployStatus?.has_nvr) {
+                          return (
+                            <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <CheckCircle2 size={22} color="#059669" />
+                                <div>
+                                  <div style={{ color: '#065f46', fontWeight: 700, fontSize: '0.90rem' }}>
+                                    Edge Agent Connected!
+                                  </div>
+                                  <div style={{ color: '#047857', fontSize: '0.78rem' }}>
+                                    {agentDeployStatus.name} &bull; {agentDeployStatus.nvr_count} NVR ({agentDeployStatus.total_cameras} Cameras) Online
+                                  </div>
                                 </div>
                               </div>
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => handleDoneAgent(activeAgentId)}
+                                style={{ background: '#059669', padding: '7px 14px', fontSize: '0.82rem' }}
+                              >
+                                Done & View Live
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={() => handleDoneAgent(activeAgentId)}
-                              style={{ background: '#059669', padding: '7px 14px', fontSize: '0.82rem' }}
-                            >
-                              Done & View Live
-                            </button>
-                          </div>
-                        ) : !doneAgentIds.includes(String(activeAgentId)) ? (
+                          );
+                        }
+
+                        return (
                           <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span className="spinner" style={{ fontSize: '18px' }}>⏳</span>
                             <span style={{ fontWeight: 600, fontSize: '0.86rem', color: '#334155' }}>
                               Waiting...
                             </span>
                           </div>
-                        ) : null}
-                      </>
-                    );
-                  })()}
+                        );
+                      })()}
+                    </>
+                  );
+                })()}
 
-                  {/* Actions */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
-                    <button type="button" className="btn btn-secondary" onClick={handleCloseModal}>
-                      Close
-                    </button>
-                  </div>
+                {/* Actions */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                  <button type="button" className="btn btn-secondary" onClick={handleCloseModal}>
+                    Close
+                  </button>
                 </div>
-              )</div>
+              </div>
+            </div>
 
           </div>
         </div>
@@ -3038,8 +2908,17 @@ function MainApp() {
 
       {/* ADD AGENT MODAL DIALOG */}
       {isAgentModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsAgentModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsAgentModalOpen(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setIsAgentModalOpen(false);
+          }}
+        >
+          <div className="modal-content" style={{ maxWidth: '440px' }}>
 
             {/* Modal Header */}
             <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -3102,8 +2981,17 @@ function MainApp() {
 
       {/* EDIT AGENT MODAL DIALOG */}
       {isEditAgentModalOpen && editingAgent && (
-        <div className="modal-overlay" onClick={() => setIsEditAgentModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsEditAgentModalOpen(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setIsEditAgentModalOpen(false);
+          }}
+        >
+          <div className="modal-content" style={{ maxWidth: '480px' }}>
             <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ background: '#ecfdf5', padding: '7px', borderRadius: '7px' }}>
@@ -3264,8 +3152,17 @@ function MainApp() {
 
       {/* EDIT NVR MODAL DIALOG */}
       {isEditNvrModalOpen && editingNvr && (
-        <div className="modal-overlay" onClick={() => setIsEditNvrModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsEditNvrModalOpen(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setIsEditNvrModalOpen(false);
+          }}
+        >
+          <div className="modal-content" style={{ maxWidth: '520px' }}>
             <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ background: '#ecfdf5', padding: '7px', borderRadius: '7px' }}>

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { LogOut, User as UserIcon, ChevronDown, ChevronUp, KeyRound, RefreshCw } from 'lucide-react';
+import { LogOut, User as UserIcon, ChevronDown, ChevronUp, KeyRound } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export default function TopHeader({
@@ -79,8 +79,10 @@ export default function TopHeader({
           ref={dropdownRef}
           style={{ position: 'relative' }}
         >
-        <div
+        <button
+          type="button"
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+          aria-label="User Account Options"
           title="User Account Options"
           style={{
             display: 'flex',
@@ -90,6 +92,8 @@ export default function TopHeader({
             userSelect: 'none',
             padding: '4px 6px',
             borderRadius: '8px',
+            border: 'none',
+            background: 'transparent',
             transition: 'background 0.15s ease'
           }}
           onMouseEnter={(e) => {
@@ -152,7 +156,7 @@ export default function TopHeader({
               />
             )}
           </div>
-        </div>
+        </button>
 
         {/* Profile Dropdown Menu */}
         {isDropdownOpen && (
