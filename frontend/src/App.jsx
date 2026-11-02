@@ -76,6 +76,19 @@ function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true, onStr
   const [streamStatus, setStreamStatus] = useState('connecting'); // 'connecting' | 'live' | 'error'
   const [retryKey, setRetryKey] = useState(0);
 
+  // Background auto-retry loop: keep retrying in background every 5 seconds if connection fails
+  useEffect(() => {
+    let timer = null;
+    if (streamStatus === 'error') {
+      timer = setTimeout(() => {
+        setRetryKey((k) => k + 1);
+      }, 5000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [streamStatus, retryKey]);
+
   useEffect(() => {
     let pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -183,16 +196,33 @@ function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true, onStr
       )}
 
       {streamStatus === 'error' && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', color: '#f87171' }}>
-          <AlertTriangle size={20} color="#ef4444" />
-          <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>No Signal</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', color: '#f87171', padding: '12px', textAlign: 'center', zIndex: 2 }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'rgba(239, 68, 68, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1px solid rgba(239, 68, 68, 0.3)'
+          }}>
+            <AlertTriangle size={17} color="#ef4444" />
+          </div>
+          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fca5a5' }}>
+            It cannot be connected
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#94a3b8', fontSize: '0.70rem' }}>
+            <div className="spinner" style={{ width: '11px', height: '11px', border: '1.5px solid #475569', borderTopColor: '#10b981', borderRadius: '50%' }}></div>
+            <span>Retrying in background...</span>
+          </div>
           <button
             type="button"
             onClick={() => setRetryKey((k) => k + 1)}
             className="btn btn-secondary btn-sm"
-            style={{ fontSize: '0.7rem', padding: '3px 8px', marginTop: '2px' }}
+            style={{ fontSize: '0.68rem', padding: '2px 8px', marginTop: '2px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#ffffff' }}
           >
-            Retry
+            Retry Now
           </button>
         </div>
       )}
@@ -301,6 +331,11 @@ function MainApp() {
 
   // Snapshot Toast State & Handler
   const [snapshotToast, setSnapshotToast] = useState(null);
+
+  const showToast = (message, isError = false) => {
+    setSnapshotToast({ message, isError });
+    setTimeout(() => setSnapshotToast(null), 3500);
+  };
 
   const handleCaptureSnapshot = (camId, camName) => {
     try {
@@ -609,10 +644,10 @@ function MainApp() {
         }
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.detail || 'Failed to create agent');
+        showToast(data.detail || 'Failed to create agent', true);
       }
     } catch (err) {
-      alert(`Error creating agent: ${err.message}`);
+      showToast(`Error creating agent: ${err.message}`, true);
     } finally {
       setIsCreatingAgent(false);
     }
@@ -631,12 +666,12 @@ function MainApp() {
       const res = await apiRequest(`/api/agent/${agentId}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.detail || 'Failed to delete agent');
+        showToast(data.detail || 'Failed to delete agent', true);
       }
       await fetchAgents();
       await fetchNvrs();
     } catch (err) {
-      alert(`Error deleting agent: ${err.message}`);
+      showToast(`Error deleting agent: ${err.message}`, true);
       await fetchAgents();
       await fetchNvrs();
     }
@@ -716,7 +751,7 @@ function MainApp() {
   // Open / Close Modal (requires agent to exist and be linked)
   const handleOpenModal = () => {
     if (!isAgentLinked) {
-      alert('You must link with an Agent first before adding NVR devices.');
+      showToast('You must link with an Agent first before adding NVR devices.', true);
       return;
     }
     setIsModalOpen(true);
@@ -749,7 +784,7 @@ function MainApp() {
       const res = await apiRequest(`/api/nvr/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(`Delete failed: ${data.detail || 'Server error'}`);
+        showToast(`Delete failed: ${data.detail || 'Server error'}`, true);
         await fetchNvrs();
         await fetchAgents();
       } else {
@@ -757,7 +792,7 @@ function MainApp() {
         await fetchAgents();
       }
     } catch (err) {
-      alert(`Delete failed: ${err.message}`);
+      showToast(`Delete failed: ${err.message}`, true);
       await fetchNvrs();
       await fetchAgents();
     }
@@ -1126,12 +1161,8 @@ function MainApp() {
     });
   };
 
-  // Filtered cameras: Strictly show cameras whose video stream is active and reachable (exclude dead/no-signal channels)
+  // Filtered cameras: Show ALL cameras registered on NVRs (never hide cameras from grid)
   const filteredCameras = allCameras.filter((cam) => {
-    if (failedStreamCamIds.has(cam.id)) return false;
-    if (cam.stream_ready === false) return false;
-    if (cam.status === 'offline' || cam.status === 'unreachable') return false;
-
     if (cameraSearch.trim()) {
       const q = cameraSearch.toLowerCase().trim();
       const matchName = (cam.name || '').toLowerCase().includes(q);
@@ -2659,29 +2690,7 @@ function MainApp() {
                                 />
                               </div>
 
-                              {/* Bottom Overlay: Minimal glass pill badges */}
-                              <div className="camera-tile-footer">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                  {hasPermission('CAM_RECORD') && (
-                                    <span style={{ color: '#ef4444', fontWeight: 700, fontSize: '0.68rem', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>REC ●</span>
-                                  )}
-                                  <span style={{
-                                    color: '#34d399',
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                    background: 'rgba(6, 78, 59, 0.75)',
-                                    padding: '1px 5px',
-                                    borderRadius: '3px',
-                                    border: '1px solid rgba(16, 185, 129, 0.3)'
-                                  }}>
-                                    LIVE
-                                  </span>
-                                </div>
 
-                                <div className="camera-tile-footer-tag">
-                                  CH {cam.channel_number}
-                                </div>
-                              </div>
                             </div>
                           );
                         })}
@@ -3027,15 +3036,15 @@ function MainApp() {
         </div>
       </main>
 
-      {/* NON-BLOCKING FLOATING SNAPSHOT TOAST */}
+      {/* NON-BLOCKING FLOATING TOAST NOTIFICATION */}
       {snapshotToast && (
         <div
           style={{
             position: 'fixed',
             bottom: '24px',
             right: '24px',
-            background: '#064e3b',
-            border: '1px solid #10b981',
+            background: (typeof snapshotToast === 'object' && snapshotToast?.isError) ? '#7f1d1d' : '#064e3b',
+            border: `1px solid ${(typeof snapshotToast === 'object' && snapshotToast?.isError) ? '#ef4444' : '#10b981'}`,
             color: '#ecfdf5',
             padding: '12px 20px',
             borderRadius: '8px',
@@ -3048,8 +3057,12 @@ function MainApp() {
             zIndex: 99999999
           }}
         >
-          <CheckCircle2 size={18} color="#34d399" />
-          <span>{snapshotToast}</span>
+          {(typeof snapshotToast === 'object' && snapshotToast?.isError) ? (
+            <AlertTriangle size={18} color="#fca5a5" />
+          ) : (
+            <CheckCircle2 size={18} color="#34d399" />
+          )}
+          <span>{typeof snapshotToast === 'object' ? snapshotToast.message : snapshotToast}</span>
         </div>
       )}
 

@@ -49,6 +49,8 @@ PERMISSIONS_DATA = [
 
 def run_migrations():
     """Add new columns to existing tables safely if not already present."""
+    if engine.name == "sqlite":
+        return
     with engine.connect() as conn:
         # Columns for agents
         conn.execute(text("ALTER TABLE agents ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;"))
