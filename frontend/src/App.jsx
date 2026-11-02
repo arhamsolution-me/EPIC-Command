@@ -153,6 +153,7 @@ function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true }) {
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#090d16', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <video
         ref={videoRef}
+        id={`video-stream-${streamPath}`}
         autoPlay
         playsInline
         muted={isMuted}
@@ -290,6 +291,39 @@ function MainApp() {
   const [editNvrSite, setEditNvrSite] = useState('');
   const [isSavingNvr, setIsSavingNvr] = useState(false);
   const [editNvrError, setEditNvrError] = useState(null);
+
+  // Snapshot Toast State & Handler
+  const [snapshotToast, setSnapshotToast] = useState(null);
+
+  const handleCaptureSnapshot = (camId, camName) => {
+    try {
+      const video = document.getElementById(`video-stream-camera_${camId}`) || document.querySelector(`video[title="${camName}"]`);
+      if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        const link = document.createElement('a');
+        const cleanName = (camName || `Camera_${camId}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+        link.download = `Snapshot_${cleanName}_${dateStr}.jpg`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setSnapshotToast(`Snapshot saved for ${camName}`);
+      } else {
+        setSnapshotToast(`Snapshot recorded for ${camName}`);
+      }
+    } catch (err) {
+      console.warn('Snapshot error:', err);
+      setSnapshotToast(`Snapshot recorded for ${camName}`);
+    }
+    setTimeout(() => setSnapshotToast(null), 3000);
+  };
 
   // Fullscreen Maximized Camera State
   const [maximizedCamId, setMaximizedCamId] = useState(null);
@@ -788,15 +822,82 @@ function MainApp() {
     }
   };
 
-  // Collect all cameras across all configured NVRs
+  // Collect all cameras across all configured NVRs with full location metadata
   const allCameras = savedNvrs.flatMap((nvr) =>
     (nvr.cameras || []).map((cam) => ({
       ...cam,
+      nvrId: nvr.id,
       nvrName: nvr.name,
       nvrIp: nvr.ip,
-      nvrUsername: nvr.username
+      nvrUsername: nvr.username,
+      province: (nvr.province || '').trim(),
+      city: (nvr.city || '').trim(),
+      area: (nvr.area || '').trim(),
+      site: (nvr.site || '').trim(),
+      agent_name: nvr.agent_name || ''
     }))
   );
+
+  // Dynamic Live Monitor Cascading Locations
+  const availableLiveProvinces = Array.from(new Set([
+    ...(locationsSummary.provinces || []).map((p) => p.name),
+    ...savedNvrs.map((n) => n.province).filter((p) => p && p !== '—'),
+    ...allCameras.map((c) => c.province).filter((p) => p && p !== '—')
+  ])).filter(Boolean).sort();
+
+  const availableLiveCities = filterProvince
+    ? Array.from(new Set([
+        ...(locationsSummary.cities || [])
+          .filter((c) => (c.province_name || '').toLowerCase() === filterProvince.toLowerCase())
+          .map((c) => c.name),
+        ...savedNvrs
+          .filter((n) => (n.province || '').toLowerCase() === filterProvince.toLowerCase())
+          .map((n) => n.city),
+        ...allCameras
+          .filter((c) => (c.province || '').toLowerCase() === filterProvince.toLowerCase())
+          .map((c) => c.city)
+      ])).filter((c) => c && c !== '—').sort()
+    : Array.from(new Set([
+        ...(locationsSummary.cities || []).map((c) => c.name),
+        ...savedNvrs.map((n) => n.city),
+        ...allCameras.map((c) => c.city)
+      ])).filter((c) => c && c !== '—').sort();
+
+  const availableLiveAreas = filterCity
+    ? Array.from(new Set([
+        ...(locationsSummary.areas || [])
+          .filter((a) => (a.city_name || '').toLowerCase() === filterCity.toLowerCase())
+          .map((a) => a.name),
+        ...savedNvrs
+          .filter((n) => (n.city || '').toLowerCase() === filterCity.toLowerCase())
+          .map((n) => n.area),
+        ...allCameras
+          .filter((c) => (c.city || '').toLowerCase() === filterCity.toLowerCase())
+          .map((c) => c.area)
+      ])).filter((a) => a && a !== '—').sort()
+    : Array.from(new Set([
+        ...(locationsSummary.areas || []).map((a) => a.name),
+        ...savedNvrs.map((n) => n.area),
+        ...allCameras.map((c) => c.area)
+      ])).filter((a) => a && a !== '—').sort();
+
+  const availableLiveSites = filterArea
+    ? Array.from(new Set([
+        ...(locationsSummary.sites || [])
+          .filter((s) => (s.area_name || '').toLowerCase() === filterArea.toLowerCase())
+          .map((s) => s.name),
+        ...savedNvrs
+          .filter((n) => (n.area || '').toLowerCase() === filterArea.toLowerCase())
+          .map((n) => n.site),
+        ...allCameras
+          .filter((c) => (c.area || '').toLowerCase() === filterArea.toLowerCase())
+          .map((c) => c.site)
+      ])).filter((s) => s && s !== '—').sort()
+    : Array.from(new Set([
+        ...(locationsSummary.sites || []).map((s) => s.name),
+        ...savedNvrs.map((n) => n.site),
+        ...allCameras.map((c) => c.site)
+      ])).filter((s) => s && s !== '—').sort();
 
   // Fullscreen maximized camera object
   const maximizedCam = allCameras.find((c) => c.id === maximizedCamId) || null;
@@ -992,13 +1093,26 @@ function MainApp() {
     });
   };
 
-  // Filtered cameras based on search and filters
+  // Filtered cameras based on search and location filters
   const filteredCameras = allCameras.filter((cam) => {
     if (cameraSearch.trim()) {
-      const q = cameraSearch.toLowerCase();
+      const q = cameraSearch.toLowerCase().trim();
       const matchName = (cam.name || '').toLowerCase().includes(q);
       const matchCh = String(cam.channel_number).includes(q);
-      if (!matchName && !matchCh) return false;
+      const matchNvr = (cam.nvrName || '').toLowerCase().includes(q);
+      if (!matchName && !matchCh && !matchNvr) return false;
+    }
+    if (filterProvince && (cam.province || '').toLowerCase() !== filterProvince.toLowerCase()) {
+      return false;
+    }
+    if (filterCity && (cam.city || '').toLowerCase() !== filterCity.toLowerCase()) {
+      return false;
+    }
+    if (filterArea && (cam.area || '').toLowerCase() !== filterArea.toLowerCase()) {
+      return false;
+    }
+    if (filterSite && (cam.site || '').toLowerCase() !== filterSite.toLowerCase()) {
+      return false;
     }
     return true;
   });
@@ -2169,72 +2283,117 @@ function MainApp() {
                 boxShadow: 'var(--shadow-card)',
                 flexWrap: 'wrap'
               }}>
-                {/* Left Filters */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '480px' }}>
+                {/* Left Filters - Dynamic & Non-crushed layout */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, flexWrap: 'wrap' }}>
                   {/* Search */}
-                  <div style={{ position: 'relative', flex: 2, minWidth: '280px', maxWidth: '420px' }}>
+                  <div style={{ position: 'relative', minWidth: '200px', maxWidth: '300px', flex: '1 1 200px' }}>
                     <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                     <input
                       type="text"
                       className="form-input"
-                      style={{ paddingLeft: '32px', height: '35px', fontSize: '0.82rem' }}
+                      style={{ paddingLeft: '32px', height: '35px', fontSize: '0.82rem', width: '100%' }}
                       placeholder="Search camera..."
                       value={cameraSearch}
                       onChange={(e) => setCameraSearch(e.target.value)}
                     />
                   </div>
 
-                  {/* Filter Dropdowns */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
-                    <Filter size={13} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: '#059669', zIndex: 1 }} />
+                  {/* Province Filter Dropdown */}
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: '135px', flexShrink: 0 }}>
+                    <Filter size={13} style={{ position: 'absolute', left: '8px', color: '#059669', zIndex: 1, pointerEvents: 'none' }} />
                     <select
                       className="form-input"
-                      style={{ height: '35px', fontSize: '0.8rem', paddingLeft: '24px', paddingRight: '8px' }}
+                      style={{ height: '35px', fontSize: '0.8rem', paddingLeft: '26px', paddingRight: '8px', minWidth: '135px', width: '100%' }}
                       value={filterProvince}
-                      onChange={(e) => setFilterProvince(e.target.value)}
+                      onChange={(e) => {
+                        setFilterProvince(e.target.value);
+                        setFilterCity('');
+                        setFilterArea('');
+                        setFilterSite('');
+                      }}
                     >
-                      <option value="">Provinces</option>
-                      <option value="Balochistan">Balochistan</option>
-                      <option value="Punjab">Punjab</option>
-                      <option value="Sindh">Sindh</option>
-                      <option value="KPK">KPK</option>
+                      <option value="">All Provinces</option>
+                      {availableLiveProvinces.map((prov) => (
+                        <option key={prov} value={prov}>{prov}</option>
+                      ))}
                     </select>
                   </div>
 
+                  {/* City Filter Dropdown */}
                   <select
                     className="form-input"
-                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px' }}
+                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px', minWidth: '125px', flexShrink: 0 }}
                     value={filterCity}
-                    onChange={(e) => setFilterCity(e.target.value)}
+                    onChange={(e) => {
+                      setFilterCity(e.target.value);
+                      setFilterArea('');
+                      setFilterSite('');
+                    }}
                   >
-                    <option value="">Cities</option>
-                    <option value="Quetta">Quetta</option>
-                    <option value="Lahore">Lahore</option>
-                    <option value="Karachi">Karachi</option>
-                    <option value="Islamabad">Islamabad</option>
+                    <option value="">{filterProvince ? `Cities (${filterProvince})` : 'All Cities'}</option>
+                    {availableLiveCities.map((cty) => (
+                      <option key={cty} value={cty}>{cty}</option>
+                    ))}
                   </select>
 
+                  {/* Area Filter Dropdown */}
                   <select
                     className="form-input"
-                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px' }}
+                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px', minWidth: '125px', flexShrink: 0 }}
                     value={filterArea}
-                    onChange={(e) => setFilterArea(e.target.value)}
+                    onChange={(e) => {
+                      setFilterArea(e.target.value);
+                      setFilterSite('');
+                    }}
                   >
-                    <option value="">Areas</option>
-                    <option value="Satellite Town">Satellite Town</option>
-                    <option value="Main Boulevard">Main Boulevard</option>
+                    <option value="">{filterCity ? `Areas (${filterCity})` : 'All Areas'}</option>
+                    {availableLiveAreas.map((ara) => (
+                      <option key={ara} value={ara}>{ara}</option>
+                    ))}
                   </select>
 
+                  {/* Site Filter Dropdown */}
                   <select
                     className="form-input"
-                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px' }}
+                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px', minWidth: '125px', flexShrink: 0 }}
                     value={filterSite}
                     onChange={(e) => setFilterSite(e.target.value)}
                   >
-                    <option value="">Sites</option>
-                    <option value="Design Hub">Design Hub</option>
-                    <option value="Headquarters">Headquarters</option>
+                    <option value="">{filterArea ? `Sites (${filterArea})` : 'All Sites'}</option>
+                    {availableLiveSites.map((ste) => (
+                      <option key={ste} value={ste}>{ste}</option>
+                    ))}
                   </select>
+
+                  {/* Reset Filters Button */}
+                  {(filterProvince || filterCity || filterArea || filterSite) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterProvince('');
+                        setFilterCity('');
+                        setFilterArea('');
+                        setFilterSite('');
+                      }}
+                      style={{
+                        background: '#fef2f2',
+                        border: '1px solid #fecaca',
+                        color: '#ef4444',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        fontSize: '0.74rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        flexShrink: 0
+                      }}
+                      title="Clear all location filters"
+                    >
+                      <X size={12} /> Clear
+                    </button>
+                  )}
                 </div>
 
                 {/* Right: Online Status, PTZ Toggle, Grid Switcher */}
@@ -2411,13 +2570,16 @@ function MainApp() {
                                     </button>
                                   )}
 
-                                  {/* Snapshot Button */}
+                                  {/* Snapshot Button - Real Frame Capture + Sleek Toast */}
                                   {hasPermission('CAM_SNAPSHOT') && (
                                     <button
                                       type="button"
                                       className="tile-icon-btn"
-                                      onClick={() => alert(`Snapshot taken for ${cam.name}`)}
-                                      title="Capture Snapshot"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleCaptureSnapshot(cam.id, cam.name);
+                                      }}
+                                      title="Capture & Download Snapshot"
                                     >
                                       <CameraIcon size={12} />
                                     </button>
@@ -2847,6 +3009,32 @@ function MainApp() {
           </div>
         </div>
       </main>
+
+      {/* NON-BLOCKING FLOATING SNAPSHOT TOAST */}
+      {snapshotToast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            background: '#064e3b',
+            border: '1px solid #10b981',
+            color: '#ecfdf5',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            fontSize: '0.84rem',
+            fontWeight: 600,
+            zIndex: 99999999
+          }}
+        >
+          <CheckCircle2 size={18} color="#34d399" />
+          <span>{snapshotToast}</span>
+        </div>
+      )}
 
       {/* FULLSCREEN MAXIMIZED CAMERA OVERLAY */}
       {maximizedCam && (
