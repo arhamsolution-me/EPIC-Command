@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Cctv,
   Server,
@@ -936,19 +936,14 @@ function MainApp() {
   // Fullscreen maximized camera object
   const maximizedCam = allCameras.find((c) => c.id === maximizedCamId) || null;
 
-  // PTZ cameras list - cameras that actually possess motorized PTZ capability
-  const ptzCameras = allCameras.filter((c) => c.is_ptz);
-
-  // Selected PTZ Camera - strictly chooses from active PTZ cameras
-  const selectedPtzCam = allCameras.find((c) => c.id === selectedPtzCamId && c.is_ptz)
-    || ptzCameras[0]
+  // Selected PTZ Camera - seamlessly works for all cameras
+  const selectedPtzCam = allCameras.find((c) => c.id === selectedPtzCamId)
+    || allCameras[0]
     || null;
 
   useEffect(() => {
-    if (ptzCameras.length > 0) {
-      if (!selectedPtzCamId || !ptzCameras.some((c) => c.id === selectedPtzCamId)) {
-        setSelectedPtzCamId(ptzCameras[0].id);
-      }
+    if (allCameras.length > 0 && !selectedPtzCamId) {
+      setSelectedPtzCamId(allCameras[0].id);
     }
   }, [allCameras, selectedPtzCamId]);
 
@@ -1120,15 +1115,12 @@ function MainApp() {
     setSelectedPtzCamId(cam.id);
   };
 
-  // Toggle PTZ panel on / off reliably - always opens to first active PTZ camera
+  // Toggle PTZ panel on / off reliably
   const handleTogglePtz = () => {
     setIsPtzOpen((prev) => {
       const next = !prev;
-      if (next) {
-        const firstPtz = allCameras.find((c) => c.is_ptz) || allCameras[0];
-        if (firstPtz && (!selectedPtzCamId || !allCameras.find((c) => c.id === selectedPtzCamId)?.is_ptz)) {
-          setSelectedPtzCamId(firstPtz.id);
-        }
+      if (next && !selectedPtzCamId && allCameras.length > 0) {
+        setSelectedPtzCamId(allCameras[0].id);
       }
       return next;
     });
@@ -2600,8 +2592,8 @@ function MainApp() {
                                 </div>
 
                                 <div className="camera-tile-actions">
-                                  {/* PTZ Button: Render ONLY on motorized PTZ cameras */}
-                                  {hasPermission('CAM_PTZ_CONTROL') && cam.is_ptz && (
+                                  {/* PTZ Button: Available for all camera channels */}
+                                  {hasPermission('CAM_PTZ_CONTROL') && (
                                     <button
                                       type="button"
                                       className="tile-ptz-btn"
@@ -2609,7 +2601,7 @@ function MainApp() {
                                         setSelectedPtzCamId(cam.id);
                                         setIsPtzOpen(true);
                                       }}
-                                      title="PTZ Controls Active (Click to open remote)"
+                                      title="Open PTZ Remote Controls"
                                     >
                                       <Sliders size={11} color="#ffffff" />
                                     </button>
@@ -2719,7 +2711,7 @@ function MainApp() {
                           </button>
                         </div>
 
-                        {/* Active Camera Card - Strictly PTZ Cameras */}
+                        {/* Active Camera Card - All Cameras Accessible */}
                         <div className="ptz-camera-badge-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                             <div className="ptz-camera-badge-left">
@@ -2741,7 +2733,7 @@ function MainApp() {
                               ● PTZ ACTIVE
                             </div>
                           </div>
-                          {ptzCameras.length > 1 && (
+                          {allCameras.length > 1 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
                               <CameraIcon size={13} color="#64748b" />
                               <select
@@ -2759,7 +2751,7 @@ function MainApp() {
                                   cursor: 'pointer'
                                 }}
                               >
-                                {ptzCameras.map((cam) => (
+                                {allCameras.map((cam) => (
                                   <option key={cam.id} value={cam.id}>
                                     {cam.name} (Ch {cam.channel_number})
                                   </option>
@@ -2769,7 +2761,7 @@ function MainApp() {
                           )}
                         </div>
 
-                        {selectedPtzCam.is_ptz ? (
+                        {selectedPtzCam ? (
                           <>
                             {/* Section: Pan/Tilt Speed Velocity Slider */}
                             <div>
@@ -3105,8 +3097,8 @@ function MainApp() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {/* PTZ Button - Render ONLY if camera has PTZ active */}
-              {hasPermission('CAM_PTZ_CONTROL') && maximizedCam.is_ptz && (
+              {/* PTZ Button - Available on all cameras */}
+              {hasPermission('CAM_PTZ_CONTROL') && (
                 <button
                   type="button"
                   onClick={() => {
