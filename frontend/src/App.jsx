@@ -839,7 +839,9 @@ function MainApp() {
   );
 
   // Dynamic Live Monitor Cascading Locations
+  const defaultProvinces = ['Punjab', 'Sindh', 'KPK', 'Balochistan', 'Islamabad'];
   const availableLiveProvinces = Array.from(new Set([
+    ...defaultProvinces,
     ...(locationsSummary.provinces || []).map((p) => p.name),
     ...savedNvrs.map((n) => n.province).filter((p) => p && p !== '—'),
     ...allCameras.map((c) => c.province).filter((p) => p && p !== '—')
@@ -2269,29 +2271,30 @@ function MainApp() {
           {/* Kept mounted in background so streams stay active without reconnect delay */}
           <div style={{ display: activeNav === 'monitor' && hasPermission('LIVE_MONITOR_VIEW') ? 'block' : 'none' }}>
             <div>
-              {/* Top Control Bar matching user design: Search, Filters, Status, Close PTZ, Layout Modes */}
+              {/* Top Control Bar: Search, Filters, Status, Close PTZ, Layout Modes - Strictly Single Row */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: '14px',
+                gap: '12px',
                 marginBottom: '18px',
                 background: '#ffffff',
                 border: '1px solid var(--border-color)',
                 padding: '10px 16px',
                 borderRadius: 'var(--radius-md)',
                 boxShadow: 'var(--shadow-card)',
-                flexWrap: 'wrap'
+                whiteSpace: 'nowrap',
+                overflowX: 'auto'
               }}>
-                {/* Left Filters - Dynamic & Non-crushed layout */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, flexWrap: 'wrap' }}>
+                {/* Left Filters - Strictly Single Row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                   {/* Search */}
-                  <div style={{ position: 'relative', minWidth: '200px', maxWidth: '300px', flex: '1 1 200px' }}>
-                    <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <div style={{ position: 'relative', width: '180px', flexShrink: 0 }}>
+                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                     <input
                       type="text"
                       className="form-input"
-                      style={{ paddingLeft: '32px', height: '35px', fontSize: '0.82rem', width: '100%' }}
+                      style={{ paddingLeft: '30px', height: '35px', fontSize: '0.80rem', width: '180px' }}
                       placeholder="Search camera..."
                       value={cameraSearch}
                       onChange={(e) => setCameraSearch(e.target.value)}
@@ -2299,11 +2302,11 @@ function MainApp() {
                   </div>
 
                   {/* Province Filter Dropdown */}
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: '135px', flexShrink: 0 }}>
-                    <Filter size={13} style={{ position: 'absolute', left: '8px', color: '#059669', zIndex: 1, pointerEvents: 'none' }} />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                    <Filter size={12} style={{ position: 'absolute', left: '8px', color: '#059669', zIndex: 1, pointerEvents: 'none' }} />
                     <select
-                      className="form-input"
-                      style={{ height: '35px', fontSize: '0.8rem', paddingLeft: '26px', paddingRight: '8px', minWidth: '135px', width: '100%' }}
+                      className="image-filter-select"
+                      style={{ paddingLeft: '24px', width: '120px' }}
                       value={filterProvince}
                       onChange={(e) => {
                         setFilterProvince(e.target.value);
@@ -2312,7 +2315,7 @@ function MainApp() {
                         setFilterSite('');
                       }}
                     >
-                      <option value="">All Provinces</option>
+                      <option value="">Provinces</option>
                       {availableLiveProvinces.map((prov) => (
                         <option key={prov} value={prov}>{prov}</option>
                       ))}
@@ -2321,8 +2324,8 @@ function MainApp() {
 
                   {/* City Filter Dropdown */}
                   <select
-                    className="form-input"
-                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px', minWidth: '125px', flexShrink: 0 }}
+                    className="image-filter-select"
+                    style={{ width: '105px', flexShrink: 0 }}
                     value={filterCity}
                     onChange={(e) => {
                       setFilterCity(e.target.value);
@@ -2330,7 +2333,7 @@ function MainApp() {
                       setFilterSite('');
                     }}
                   >
-                    <option value="">{filterProvince ? `Cities (${filterProvince})` : 'All Cities'}</option>
+                    <option value="">Cities</option>
                     {availableLiveCities.map((cty) => (
                       <option key={cty} value={cty}>{cty}</option>
                     ))}
@@ -2338,15 +2341,15 @@ function MainApp() {
 
                   {/* Area Filter Dropdown */}
                   <select
-                    className="form-input"
-                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px', minWidth: '125px', flexShrink: 0 }}
+                    className="image-filter-select"
+                    style={{ width: '105px', flexShrink: 0 }}
                     value={filterArea}
                     onChange={(e) => {
                       setFilterArea(e.target.value);
                       setFilterSite('');
                     }}
                   >
-                    <option value="">{filterCity ? `Areas (${filterCity})` : 'All Areas'}</option>
+                    <option value="">Areas</option>
                     {availableLiveAreas.map((ara) => (
                       <option key={ara} value={ara}>{ara}</option>
                     ))}
@@ -2354,12 +2357,12 @@ function MainApp() {
 
                   {/* Site Filter Dropdown */}
                   <select
-                    className="form-input"
-                    style={{ height: '35px', fontSize: '0.8rem', padding: '0 8px', minWidth: '125px', flexShrink: 0 }}
+                    className="image-filter-select"
+                    style={{ width: '105px', flexShrink: 0 }}
                     value={filterSite}
                     onChange={(e) => setFilterSite(e.target.value)}
                   >
-                    <option value="">{filterArea ? `Sites (${filterArea})` : 'All Sites'}</option>
+                    <option value="">Sites</option>
                     {availableLiveSites.map((ste) => (
                       <option key={ste} value={ste}>{ste}</option>
                     ))}
@@ -2380,24 +2383,24 @@ function MainApp() {
                         border: '1px solid #fecaca',
                         color: '#ef4444',
                         borderRadius: '6px',
-                        padding: '6px 10px',
+                        padding: '6px 8px',
                         fontSize: '0.74rem',
                         fontWeight: 600,
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '4px',
+                        gap: '3px',
                         flexShrink: 0
                       }}
-                      title="Clear all location filters"
+                      title="Clear location filters"
                     >
-                      <X size={12} /> Clear
+                      <X size={12} />
                     </button>
                   )}
                 </div>
 
                 {/* Right: Online Status, PTZ Toggle, Grid Switcher */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                   {/* Online Badge */}
                   <div style={{
                     background: '#ecfdf5',
