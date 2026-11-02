@@ -238,7 +238,43 @@ def list_nvrs(
         else:
             query = query.filter(NVR.id == -1)
     nvrs = query.order_by(NVR.id.desc()).all()
-    return {"nvrs": [n.to_dict() for n in nvrs]}
+
+    # Query MediaMTX paths ready status (identifies active vs broken RTSP streams)
+    ready_camera_ids = set()
+    failed_camera_ids = set()
+    try:
+        import httpx
+        with httpx.Client(timeout=1.0) as client:
+            res = client.get("http://127.0.0.1:9997/v3/paths/list")
+            if res.status_code == 200:
+                for item in res.json().get("items", []):
+                    name = item.get("name", "")
+                    if name.startswith("camera_") and not name.endswith("_main"):
+                        try:
+                            cid = int(name.replace("camera_", ""))
+                            if item.get("ready"):
+                                ready_camera_ids.add(cid)
+                            elif item.get("ready") is False and item.get("bytesReceived", 0) == 0:
+                                failed_camera_ids.add(cid)
+                        except ValueError:
+                            pass
+    except Exception:
+        pass
+
+    result = []
+    for n in nvrs:
+        n_dict = n.to_dict()
+        for cam in n_dict.get("cameras", []):
+            cid = cam.get("id")
+            if cid in ready_camera_ids:
+                cam["stream_ready"] = True
+            elif cid in failed_camera_ids:
+                cam["stream_ready"] = False
+            else:
+                cam["stream_ready"] = None
+        result.append(n_dict)
+
+    return {"nvrs": result}
 
 
 @router.get("/media/status")

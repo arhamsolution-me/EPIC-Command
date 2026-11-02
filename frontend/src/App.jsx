@@ -71,7 +71,7 @@ function waitForIceGathering(pc, timeoutMs = 800) {
  * Connects directly to MediaMTX via WHEP protocol.
  * Sub-second latency (< 200ms), Zero Docker, Zero CPU transcoding.
  */
-function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true }) {
+function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true, onStreamError = null, onStreamReady = null }) {
   const videoRef = useRef(null);
   const [streamStatus, setStreamStatus] = useState('connecting'); // 'connecting' | 'live' | 'error'
   const [retryKey, setRetryKey] = useState(0);
@@ -86,13 +86,19 @@ function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true }) {
     pc.ontrack = (event) => {
       if (videoRef.current && event.streams[0]) {
         videoRef.current.srcObject = event.streams[0];
-        if (!isCancelled) setStreamStatus('live');
+        if (!isCancelled) {
+          setStreamStatus('live');
+          onStreamReady?.(streamPath);
+        }
       }
     };
 
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-        if (!isCancelled) setStreamStatus('error');
+        if (!isCancelled) {
+          setStreamStatus('error');
+          onStreamError?.(streamPath);
+        }
       }
     };
 
@@ -135,6 +141,7 @@ function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true }) {
         console.error(`[WebRTC WHEP] Error connecting ${streamPath}:`, err);
         if (!isCancelled) {
           setStreamStatus('error');
+          onStreamError?.(streamPath);
         }
       }
     }
@@ -147,10 +154,10 @@ function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true }) {
         pc.close();
       }
     };
-  }, [streamPath, retryKey]);
+  }, [streamPath, retryKey, onStreamError, onStreamReady]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', background: '#090d16', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: '#090d16', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       <video
         ref={videoRef}
         id={`video-stream-${streamPath}`}
@@ -161,7 +168,7 @@ function LiveWebRtcCamera({ streamPath = '', camName = '', isMuted = true }) {
         style={{
           width: '100%',
           height: '100%',
-          objectFit: 'contain',
+          objectFit: 'cover',
           display: streamStatus === 'live' ? 'block' : 'none'
         }}
       >
@@ -374,9 +381,11 @@ function MainApp() {
     link.remove();
   };
 
-  // Live Monitor Grid Mode (persisted in cache)
+  // Live Monitor Grid Mode (persisted in cache, defaults to 3x3 = 9 cameras)
   const [gridMode, setGridMode] = useState(() => {
-    return localStorage.getItem('epic_command_grid_mode') || localStorage.getItem('epic_vision_grid_mode') || 'grid-2x2';
+    const saved = localStorage.getItem('epic_command_grid_mode') || localStorage.getItem('epic_vision_grid_mode');
+    if (!saved || saved === 'grid-2x2') return 'grid-3x3';
+    return saved;
   });
 
   useEffect(() => {
@@ -457,8 +466,31 @@ function MainApp() {
   const [nvrAreaFilter, setNvrAreaFilter] = useState('');
   const [nvrSiteFilter, setNvrSiteFilter] = useState('');
 
-  // Pagination State for All Pages (Agents, NVRs, Cameras)
-  const [camerasPerPage, setCamerasPerPage] = useState(4); // Default 4 fits 2x2 without scroll
+  // Pagination State for All Pages (Agents, NVRs, Cameras) - defaults to 9 for 3x3
+  const [camerasPerPage, setCamerasPerPage] = useState(() => {
+    const saved = localStorage.getItem('epic_command_grid_mode') || localStorage.getItem('epic_vision_grid_mode');
+    if (saved === 'grid-1x1') return 1;
+    if (saved === 'grid-2x2') return 4;
+    if (saved === 'grid-4x4') return 16;
+    if (saved === 'grid-6x6') return 36;
+    if (saved === 'grid-8x8') return 64;
+    return 9; // Default 3x3 = 9 cameras
+  });
+  const [failedStreamCamIds, setFailedStreamCamIds] = useState(() => new Set());
+
+  const handleStreamError = useCallback((streamPath) => {
+    try {
+      const cid = Number(streamPath.replace('camera_', ''));
+      if (cid) {
+        setFailedStreamCamIds((prev) => {
+          if (prev.has(cid)) return prev;
+          const next = new Set(prev);
+          next.add(cid);
+          return next;
+        });
+      }
+    } catch {}
+  }, []);
   const [currentCameraPage, setCurrentCameraPage] = useState(1);
   const [agentsPerPage, setAgentsPerPage] = useState(10);
   const [currentAgentPage, setCurrentAgentPage] = useState(1);
@@ -1102,8 +1134,12 @@ function MainApp() {
     });
   };
 
-  // Filtered cameras based on search and location filters
+  // Filtered cameras: Strictly show cameras whose video stream is active and reachable (exclude dead/no-signal channels)
   const filteredCameras = allCameras.filter((cam) => {
+    if (failedStreamCamIds.has(cam.id)) return false;
+    if (cam.stream_ready === false) return false;
+    if (cam.status === 'offline' || cam.status === 'unreachable') return false;
+
     if (cameraSearch.trim()) {
       const q = cameraSearch.toLowerCase().trim();
       const matchName = (cam.name || '').toLowerCase().includes(q);
@@ -2556,14 +2592,14 @@ function MainApp() {
                                 }
                               }}
                             >
-                              {/* Top Overlay */}
+                              {/* Top Overlay: Sleek glass pill header (unobtrusive, does not block video) */}
                               <div className="camera-tile-header">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span className="pulse-dot"></span>
-                                  <strong style={{ fontSize: '0.85rem' }}>{cam.name}</strong>
+                                <div className="camera-tile-badge">
+                                  <span className="pulse-dot" style={{ width: '6px', height: '6px' }}></span>
+                                  <strong style={{ fontSize: '0.76rem', color: '#ffffff' }}>{cam.name}</strong>
                                 </div>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div className="camera-tile-actions">
                                   {/* PTZ Button: Render ONLY on motorized PTZ cameras */}
                                   {hasPermission('CAM_PTZ_CONTROL') && cam.is_ptz && (
                                     <button
@@ -2575,7 +2611,7 @@ function MainApp() {
                                       }}
                                       title="PTZ Controls Active (Click to open remote)"
                                     >
-                                      <Sliders size={12} color="#ffffff" />
+                                      <Sliders size={11} color="#ffffff" />
                                     </button>
                                   )}
 
@@ -2584,13 +2620,14 @@ function MainApp() {
                                     <button
                                       type="button"
                                       className="tile-icon-btn"
+                                      style={{ padding: '3px 6px', height: '24px' }}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleCaptureSnapshot(cam.id, cam.name);
                                       }}
                                       title="Capture & Download Snapshot"
                                     >
-                                      <CameraIcon size={12} />
+                                      <CameraIcon size={11} />
                                     </button>
                                   )}
 
@@ -2602,14 +2639,15 @@ function MainApp() {
                                       setMaximizedCamId(cam.id);
                                     }}
                                     className="tile-icon-btn"
+                                    style={{ padding: '3px 6px', height: '24px' }}
                                     title="Fullscreen Camera Stream"
                                   >
-                                    <Maximize2 size={12} />
+                                    <Maximize2 size={11} />
                                   </button>
                                 </div>
                               </div>
 
-                              {/* Real-time Video Stream (Native WebRTC WHEP Component) */}
+                              {/* Real-time Video Stream (Native WebRTC WHEP Component - Full Cover) */}
                               <div style={{
                                 flex: 1,
                                 display: 'flex',
@@ -2617,37 +2655,39 @@ function MainApp() {
                                 justifyContent: 'center',
                                 background: '#090d16',
                                 position: 'relative',
-                                overflow: 'hidden'
+                                overflow: 'hidden',
+                                width: '100%',
+                                height: '100%'
                               }}>
                                 <LiveWebRtcCamera
                                   streamPath={`camera_${cam.id}`}
                                   camName={cam.name}
                                   isMuted={isMuted}
+                                  onStreamError={handleStreamError}
                                 />
                               </div>
 
-                              {/* Bottom Controls Bar */}
+                              {/* Bottom Overlay: Minimal glass pill badges */}
                               <div className="camera-tile-footer">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                                   {hasPermission('CAM_RECORD') && (
-                                    <span style={{ color: '#ef4444', fontWeight: 700 }}>REC ●</span>
+                                    <span style={{ color: '#ef4444', fontWeight: 700, fontSize: '0.68rem', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>REC ●</span>
                                   )}
-                                  <span style={{ color: '#34d399', fontSize: '0.68rem', fontWeight: 600 }}>WHEP &lt; 200ms</span>
+                                  <span style={{
+                                    color: '#34d399',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    background: 'rgba(6, 78, 59, 0.75)',
+                                    padding: '1px 5px',
+                                    borderRadius: '3px',
+                                    border: '1px solid rgba(16, 185, 129, 0.3)'
+                                  }}>
+                                    LIVE
+                                  </span>
                                 </div>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>CH {cam.channel_number}</span>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      copyToClipboard(cam.rtsp_stream_url);
-                                    }}
-                                    style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
-                                    title="Copy RTSP Link"
-                                  >
-                                    <Copy size={12} />
-                                  </button>
+                                <div className="camera-tile-footer-tag">
+                                  CH {cam.channel_number}
                                 </div>
                               </div>
                             </div>
