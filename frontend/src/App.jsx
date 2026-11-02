@@ -316,26 +316,14 @@ function MainApp() {
     setActiveNav('monitor');
   };
 
-  const handleDownloadLauncher = async (ext, agentId, agentName) => {
-    try {
-      const res = await apiRequest(`/api/agent/${agentId}/launcher.${ext}`);
-      if (res.ok) {
-        const text = await res.text();
-        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `launch-agent-${agentName || 'branch'}.${ext}`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => window.URL.revokeObjectURL(url), 2000);
-        return;
-      }
-    } catch (err) {
-      console.warn('Blob launcher download fallback:', err);
-    }
-    window.location.href = `${API_BASE_URL || ''}/api/agent/${agentId}/launcher.${ext}`;
+  const handleDownloadLauncher = (ext, agentId, agentName) => {
+    const downloadUrl = `${API_BASE_URL || ''}/api/agent/${agentId}/launcher.${ext}`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.setAttribute('download', `launch-agent-${agentName || 'branch'}.${ext}`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   // Live Monitor Grid Mode (persisted in cache)
@@ -759,10 +747,32 @@ function MainApp() {
   };
 
   // Copy RTSP URL helper
-  const copyToClipboard = (url) => {
-    navigator.clipboard.writeText(url);
+  const copyToClipboard = async (url) => {
+    await copyTextToClipboard(url);
     setCopiedUrl(url);
     setTimeout(() => setCopiedUrl(null), 2000);
+  };
+
+  // Toggle Camera PTZ Status Handler
+  const handleToggleCameraPtz = async (cameraId) => {
+    try {
+      const res = await apiRequest(`/api/nvr/camera/${cameraId}/ptz`, {
+        method: 'PATCH'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedNvrs((prevNvrs) =>
+          prevNvrs.map((nvr) => ({
+            ...nvr,
+            cameras: (nvr.cameras || []).map((cam) =>
+              cam.id === cameraId ? { ...cam, is_ptz: data.is_ptz } : cam
+            )
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('Failed to toggle camera PTZ:', err);
+    }
   };
 
   // Collect all cameras across all configured NVRs
@@ -2012,6 +2022,27 @@ function MainApp() {
                                             <span style={{ fontWeight: 600, color: '#0f172a' }}>
                                               {cam.name}
                                             </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleToggleCameraPtz(cam.id)}
+                                              title="Click to toggle PTZ capability on/off for this camera"
+                                              style={{
+                                                background: cam.is_ptz ? '#ecfdf5' : '#f8fafc',
+                                                color: cam.is_ptz ? '#059669' : '#64748b',
+                                                border: `1px solid ${cam.is_ptz ? '#a7f3d0' : '#cbd5e1'}`,
+                                                borderRadius: '12px',
+                                                padding: '2px 8px',
+                                                fontSize: '0.70rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '3px'
+                                              }}
+                                            >
+                                              <Sliders size={10} />
+                                              {cam.is_ptz ? 'PTZ ACTIVE' : 'FIXED'}
+                                            </button>
                                           </div>
 
                                           {/* RTSP Stream URL Simple Text with Copy Icon */}
@@ -2348,31 +2379,20 @@ function MainApp() {
                                 </div>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  {/* PTZ Button: Rendered with active or disabled state */}
+                                  {/* PTZ Button: Rendered with active or toggleable state */}
                                   {hasPermission('CAM_PTZ_CONTROL') && (
-                                    cam.is_ptz ? (
-                                      <button
-                                        type="button"
-                                        className="tile-ptz-btn"
-                                        onClick={() => {
-                                          setSelectedPtzCamId(cam.id);
-                                          setIsPtzOpen(true);
-                                        }}
-                                        title="PTZ Controls Active"
-                                      >
-                                        <Sliders size={12} />
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        className="tile-icon-btn"
-                                        style={{ opacity: 0.45, cursor: 'not-allowed' }}
-                                        title="No PTZ controls supported"
-                                        disabled
-                                      >
-                                        <Sliders size={12} color="#94a3b8" />
-                                      </button>
-                                    )
+                                    <button
+                                      type="button"
+                                      className={cam.is_ptz ? "tile-ptz-btn" : "tile-icon-btn"}
+                                      style={!cam.is_ptz ? { opacity: 0.85, cursor: 'pointer', background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(255,255,255,0.2)' } : {}}
+                                      onClick={() => {
+                                        setSelectedPtzCamId(cam.id);
+                                        setIsPtzOpen(true);
+                                      }}
+                                      title={cam.is_ptz ? "PTZ Controls Active (Click to control)" : "Click to select and enable PTZ for this camera"}
+                                    >
+                                      <Sliders size={12} color={cam.is_ptz ? "#ffffff" : "#38bdf8"} />
+                                    </button>
                                   )}
 
                                   {/* Snapshot Button */}
@@ -2477,9 +2497,23 @@ function MainApp() {
                               <span className="pulse-dot"></span>
                               <strong className="ptz-camera-badge-title">{selectedPtzCam.name}</strong>
                             </div>
-                            <span className="ptz-camera-badge-tag" style={{ background: selectedPtzCam.is_ptz ? '#ecfdf5' : '#f1f5f9', color: selectedPtzCam.is_ptz ? '#059669' : '#64748b', borderColor: selectedPtzCam.is_ptz ? '#a7f3d0' : '#cbd5e1' }}>
-                              {selectedPtzCam.is_ptz ? 'PTZ ACTIVE' : 'No PTZ controls supported'}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleCameraPtz(selectedPtzCam.id)}
+                              className="ptz-camera-badge-tag"
+                              style={{
+                                background: selectedPtzCam.is_ptz ? '#ecfdf5' : '#fef2f2',
+                                color: selectedPtzCam.is_ptz ? '#059669' : '#dc2626',
+                                borderColor: selectedPtzCam.is_ptz ? '#a7f3d0' : '#fecaca',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              title="Click to toggle PTZ capability on/off for this camera"
+                            >
+                              {selectedPtzCam.is_ptz ? '● PTZ ACTIVE (Click to disable)' : '○ FIXED LENS (Click to enable)'}
+                            </button>
                           </div>
                           {allCameras.length > 1 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
@@ -2756,11 +2790,32 @@ function MainApp() {
                               <Sliders size={20} />
                             </div>
                             <div style={{ fontWeight: 700, fontSize: '0.90rem', color: '#1e293b' }}>
-                              No PTZ controls supported
+                              PTZ Disabled for this Camera
                             </div>
-                            <p style={{ fontSize: '0.76rem', color: '#64748b', margin: 0, lineHeight: 1.45, maxWidth: '210px' }}>
-                              This camera is a fixed lens unit and does not support motorized pan, tilt, or zoom controls.
+                            <p style={{ fontSize: '0.76rem', color: '#64748b', margin: 0, lineHeight: 1.45, maxWidth: '230px' }}>
+                              Enable motorized PTZ controls to control Pan, Tilt, Zoom, and Presets for this camera.
                             </p>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleCameraPtz(selectedPtzCam.id)}
+                              style={{
+                                background: '#059669',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '8px 16px',
+                                fontSize: '0.80rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                marginTop: '4px',
+                                boxShadow: '0 2px 4px rgba(5,150,105,0.2)'
+                              }}
+                            >
+                              <Sliders size={13} /> Enable PTZ Controls
+                            </button>
                           </div>
                         )}
                       </aside>
@@ -2906,7 +2961,7 @@ function MainApp() {
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard.writeText(`python epic-agent.py --server ${window.location.origin} --agent "${activeAgentName}" --agent-id ${activeAgentId}`);
+                              copyTextToClipboard(`python epic-agent.py --server ${window.location.origin} --agent "${activeAgentName}" --agent-id ${activeAgentId}`);
                               setCopiedCmd(true);
                               setTimeout(() => setCopiedCmd(false), 2000);
                             }}
@@ -3450,6 +3505,44 @@ function MainApp() {
     </div>
   );
 }
+
+
+// Cross-browser safe clipboard helper (supports HTTP & HTTPS)
+const copyTextToClipboard = async (text) => {
+  if (!text) return false;
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // Fallback below
+    }
+  }
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    textArea.style.width = '2em';
+    textArea.style.height = '2em';
+    textArea.style.padding = '0';
+    textArea.style.border = 'none';
+    textArea.style.outline = 'none';
+    textArea.style.boxShadow = 'none';
+    textArea.style.background = 'transparent';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    textArea.remove();
+    return successful;
+  } catch (err) {
+    console.warn('Clipboard copy failed:', err);
+    return false;
+  }
+};
 
 export default function App() {
   return (

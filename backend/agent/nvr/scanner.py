@@ -80,42 +80,42 @@ def test_rtsp_describe_detailed(
     timeout: float = 2.5
 ) -> Tuple[bool, str]:
     """
-    Perform an authenticated RTSP DESCRIBE check with Digest & Basic Auth.
-    Returns (is_live: bool, status: str) where status can be:
-      - "OK": Stream is active with valid SDP video track
-      - "NOT_FOUND": Channel does not exist or camera is unplugged (404/454)
-      - "UNAUTHORIZED": Bad username/password (401)
-      - "LOCKED": NVR security lockout triggered
-      - "ERROR": Connection / network error
+    Perform authenticated RTSP DESCRIBE check with Digest & Basic Auth.
+    Supports Dahua, Hikvision, and Generic NVRs with socket reconnect on 401.
     """
+    rtsp_url = f"rtsp://{ip}:{port}{path}"
+
+    def try_describe_req(sock, req_str):
+        try:
+            sock.sendall(req_str.encode("utf-8"))
+            return sock.recv(4096).decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
             s.connect((ip, port))
 
-            cseq = 1
-            rtsp_url = f"rtsp://{ip}:{port}{path}"
-
             # Step 1: Initial unauthenticated probe
             req1 = (
                 f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
-                f"CSeq: {cseq}\r\n"
+                f"CSeq: 1\r\n"
                 f"User-Agent: EPIC-Command/3.2\r\n"
                 f"Accept: application/sdp\r\n\r\n"
             )
-            s.sendall(req1.encode("utf-8"))
-            data = s.recv(4096).decode("utf-8", errors="ignore")
+            data = try_describe_req(s, req1)
 
-            # Check if open stream returned 200 OK directly
+            # Unauthenticated open stream 200 OK
             if "RTSP/1.0 200" in data:
                 if "m=video" in data or "application/sdp" in data or "s=" in data:
                     return (True, "OK")
 
-            # Channel not found / unplugged
+            # Empty or unplugged channel
             if "RTSP/1.0 404" in data or "RTSP/1.0 454" in data:
                 return (False, "NOT_FOUND")
 
-            # Step 2: Handle 401 Unauthorized challenge
+            # Handle 401 Unauthorized challenge
             if "RTSP/1.0 401" in data:
                 if not username:
                     return (False, "UNAUTHORIZED")
@@ -123,7 +123,6 @@ def test_rtsp_describe_detailed(
                 if "lock" in data.lower() or "illegal" in data.lower():
                     return (False, "LOCKED")
 
-                cseq += 1
                 digest_match = re.search(r'WWW-Authenticate:\s*Digest\s+([^\r\n]+)', data, re.IGNORECASE)
                 basic_match = re.search(r'WWW-Authenticate:\s*Basic', data, re.IGNORECASE)
 
@@ -136,17 +135,25 @@ def test_rtsp_describe_detailed(
 
                     ha1 = hashlib.md5(f"{username}:{realm}:{password}".encode("utf-8")).hexdigest()
 
-                    # Attempt A: Match request line exactly with full RTSP URL (Standard for VLC, FFmpeg, Dahua)
-                    auth_hdr_full = make_digest_auth_header(username, realm, nonce, rtsp_url, ha1, qop, opaque)
-                    req2 = (
+                    # Attempt A: Dahua Digest (Request line has full rtsp_url, Digest uri header has relative path)
+                    auth_hdr_path = make_digest_auth_header(username, realm, nonce, path, ha1, qop, opaque)
+                    req2_dahua = (
                         f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
-                        f"CSeq: {cseq}\r\n"
+                        f"CSeq: 2\r\n"
                         f"User-Agent: EPIC-Command/3.2\r\n"
                         f"Accept: application/sdp\r\n"
-                        f"{auth_hdr_full}\r\n\r\n"
+                        f"{auth_hdr_path}\r\n\r\n"
                     )
-                    s.sendall(req2.encode("utf-8"))
-                    data2 = s.recv(4096).decode("utf-8", errors="ignore")
+
+                    data2 = try_describe_req(s, req2_dahua)
+                    if not data2:
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                                s2.settimeout(timeout)
+                                s2.connect((ip, port))
+                                data2 = try_describe_req(s2, req2_dahua)
+                        except Exception:
+                            pass
 
                     if "RTSP/1.0 200" in data2:
                         return (True, "OK")
@@ -157,39 +164,56 @@ def test_rtsp_describe_detailed(
                     if "RTSP/1.0 404" in data2 or "RTSP/1.0 454" in data2:
                         return (False, "NOT_FOUND")
 
-                    # Attempt B: Fallback with relative path URI if server strictly requires relative path
-                    if "RTSP/1.0 401" in data2:
-                        cseq += 1
-                        auth_hdr_rel = make_digest_auth_header(username, realm, nonce, path, ha1, qop, opaque)
-                        req3 = (
-                            f"DESCRIBE {path} RTSP/1.0\r\n"
-                            f"CSeq: {cseq}\r\n"
-                            f"User-Agent: EPIC-Command/3.2\r\n"
-                            f"Accept: application/sdp\r\n"
-                            f"{auth_hdr_rel}\r\n\r\n"
-                        )
-                        s.sendall(req3.encode("utf-8"))
-                        data3 = s.recv(4096).decode("utf-8", errors="ignore")
-                        if "RTSP/1.0 200" in data3:
-                            return (True, "OK")
-                        if "lock" in data3.lower() or "illegal" in data3.lower():
-                            return (False, "LOCKED")
-                        if "RTSP/1.0 404" in data3 or "RTSP/1.0 454" in data3:
-                            return (False, "NOT_FOUND")
-                        return (False, "UNAUTHORIZED")
+                    # Attempt B: RFC Standard / Hikvision Digest (both Request line and Digest header uri have full rtsp_url)
+                    auth_hdr_full = make_digest_auth_header(username, realm, nonce, rtsp_url, ha1, qop, opaque)
+                    req2_rfc = (
+                        f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
+                        f"CSeq: 3\r\n"
+                        f"User-Agent: EPIC-Command/3.2\r\n"
+                        f"Accept: application/sdp\r\n"
+                        f"{auth_hdr_full}\r\n\r\n"
+                    )
+
+                    data3 = try_describe_req(s, req2_rfc)
+                    if not data3:
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s3:
+                                s3.settimeout(timeout)
+                                s3.connect((ip, port))
+                                data3 = try_describe_req(s3, req2_rfc)
+                        except Exception:
+                            pass
+
+                    if "RTSP/1.0 200" in data3:
+                        return (True, "OK")
+
+                    if "lock" in data3.lower() or "illegal" in data3.lower():
+                        return (False, "LOCKED")
+
+                    if "RTSP/1.0 404" in data3 or "RTSP/1.0 454" in data3:
+                        return (False, "NOT_FOUND")
+
+                    return (False, "UNAUTHORIZED")
 
                 elif basic_match or "Basic" in data:
                     creds = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
                     auth_hdr = f"Authorization: Basic {creds}"
                     req2 = (
                         f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
-                        f"CSeq: {cseq}\r\n"
+                        f"CSeq: 2\r\n"
                         f"User-Agent: EPIC-Command/3.2\r\n"
                         f"Accept: application/sdp\r\n"
                         f"{auth_hdr}\r\n\r\n"
                     )
-                    s.sendall(req2.encode("utf-8"))
-                    data2 = s.recv(4096).decode("utf-8", errors="ignore")
+                    data2 = try_describe_req(s, req2)
+                    if not data2:
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                                s2.settimeout(timeout)
+                                s2.connect((ip, port))
+                                data2 = try_describe_req(s2, req2)
+                        except Exception:
+                            pass
                     if "RTSP/1.0 200" in data2:
                         return (True, "OK")
                     if "lock" in data2.lower():

@@ -1,14 +1,16 @@
-﻿import requests
+import requests
 from requests.auth import HTTPDigestAuth
+import time
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 # F-08: Use defusedxml to prevent XML entity expansion / injection attacks
 try:
     import defusedxml.ElementTree as ET
 except ImportError:
     import xml.etree.ElementTree as ET  # fallback if defusedxml not installed
-from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 try:
     from backend.database import get_db
@@ -34,8 +36,6 @@ def get_cached_session(ip: str, user: str, pwd: str) -> requests.Session:
     return _session_cache[key]
 
 
-import time
-
 class PTZControlRequest(BaseModel):
     action: str  # 'pan_left', 'pan_right', 'tilt_up', 'tilt_down', 'pan_up_left', 'pan_up_right', 'pan_down_left', 'pan_down_right', 'zoom_in', 'zoom_out', 'stop', 'move'
     pan: Optional[int] = 0     # -100 to 100
@@ -51,10 +51,15 @@ class PresetActionRequest(BaseModel):
 
 
 @router.post("/control/{camera_id}")
-def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def control_camera_ptz(
+    camera_id: int,
+    req: PTZControlRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     Continuous Move & Step PTZ Control (Pan, Tilt, Zoom, Stop).
-    Communicates directly with NVR / Camera via Hikvision ISAPI.
+    Supports both Dahua CGI and Hikvision ISAPI transparently.
     """
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
@@ -69,14 +74,68 @@ def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Dep
         raise HTTPException(status_code=403, detail="Access denied: camera not in your assigned agent scope.")
 
     user_speed = max(1, min(100, req.speed or 50))
+    vendor = (nvr.vendor or "").upper()
+    session = get_cached_session(nvr.ip, nvr.username, nvr.password or "")
 
-    # Calibrate Pan & Tilt speed across 1-100 without deadzone:
-    # Hikvision speed domes have deadband below 15.
-    # 1% -> 15 (gentle, visible step), 50% -> 57, 100% -> 100.
+    # ==========================================
+    # DAHUA PTZ CONTROL VIA CGI PROTOCOL
+    # ==========================================
+    if "DAHUA" in vendor:
+        dahua_code_map = {
+            "pan_left": "Left",
+            "pan_right": "Right",
+            "tilt_up": "Up",
+            "tilt_down": "Down",
+            "pan_up_left": "LeftUp",
+            "pan_up_right": "RightUp",
+            "pan_down_left": "LeftDown",
+            "pan_down_right": "RightDown",
+            "zoom_in": "ZoomAdd",
+            "zoom_out": "ZoomDec",
+        }
+        d_code = dahua_code_map.get(req.action, "Up")
+        # Dahua speed scale 1-8
+        d_speed = max(1, min(8, int(round(1 + (user_speed / 100.0) * 7))))
+
+        try:
+            if req.step_duration_ms and req.step_duration_ms > 0 and req.action != "stop":
+                duration_s = min(1.5, max(0.1, req.step_duration_ms / 1000.0))
+                url_start = f"http://{nvr.ip}:{nvr.port}/cgi-bin/ptz.cgi?action=start&channel={camera.channel_number}&code={d_code}&arg1=0&arg2={d_speed}&arg3=0"
+                session.get(url_start, timeout=1.8)
+                time.sleep(duration_s)
+                url_stop = f"http://{nvr.ip}:{nvr.port}/cgi-bin/ptz.cgi?action=stop&channel={camera.channel_number}&code={d_code}&arg1=0&arg2=0&arg3=0"
+                res_stop = session.get(url_stop, timeout=1.8)
+                return {
+                    "success": res_stop.status_code in [200, 204] or "OK" in res_stop.text,
+                    "action": req.action,
+                    "step": True,
+                    "duration_ms": req.step_duration_ms,
+                    "vendor": "DAHUA"
+                }
+
+            if req.action == "stop":
+                url_stop = f"http://{nvr.ip}:{nvr.port}/cgi-bin/ptz.cgi?action=stop&channel={camera.channel_number}&code=Up&arg1=0&arg2=0&arg3=0"
+                res = session.get(url_stop, timeout=1.8)
+            else:
+                url_start = f"http://{nvr.ip}:{nvr.port}/cgi-bin/ptz.cgi?action=start&channel={camera.channel_number}&code={d_code}&arg1=0&arg2={d_speed}&arg3=0"
+                res = session.get(url_start, timeout=1.8)
+
+            return {
+                "success": res.status_code in [200, 204] or "OK" in res.text,
+                "action": req.action,
+                "vendor": "DAHUA"
+            }
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Dahua PTZ communication failed: {str(e)}"
+            )
+
+    # ==========================================
+    # HIKVISION PTZ CONTROL VIA ISAPI PROTOCOL
+    # ==========================================
+    # Calibrate Pan & Tilt speed across 1-100 without deadzone
     calibrated_speed = int(14 + (user_speed / 100.0) * 86)
-
-    # User requirement: "zoom bht slow krna ha sab bht slow slow kam krta ha"
-    # Optical zoom on Hikvision PTZ cameras must be ultra-slow and smooth (1 to 8 scale):
     calibrated_zoom = max(1, min(8, int(round(1 + (user_speed / 100.0) * 7))))
 
     pan = 0
@@ -125,21 +184,18 @@ def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Dep
 </PTZData>"""
 
     url = f"http://{nvr.ip}:{nvr.port}/ISAPI/PTZCtrl/channels/{camera.channel_number}/continuous"
-    session = get_cached_session(nvr.ip, nvr.username, nvr.password or "")
 
     try:
         # Step Move Mode: when duration is specified (e.g. click nudge)
         if req.step_duration_ms and req.step_duration_ms > 0 and req.action != "stop":
             duration_s = min(1.5, max(0.1, req.step_duration_ms / 1000.0))
-            # Start movement
-            res_start = session.put(
+            session.put(
                 url,
                 data=make_xml(pan, tilt, zoom),
                 headers={"Content-Type": "application/xml"},
                 timeout=1.8
             )
             time.sleep(duration_s)
-            # Stop movement
             res_stop = session.put(
                 url,
                 data=make_xml(0, 0, 0),
@@ -153,7 +209,8 @@ def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Dep
                 "duration_ms": req.step_duration_ms,
                 "pan": pan,
                 "tilt": tilt,
-                "zoom": zoom
+                "zoom": zoom,
+                "vendor": "HIKVISION"
             }
 
         # Continuous Move Mode
@@ -164,8 +221,22 @@ def control_camera_ptz(camera_id: int, req: PTZControlRequest, db: Session = Dep
             timeout=1.8
         )
         if res.status_code in [200, 204]:
-            return {"success": True, "action": req.action, "pan": pan, "tilt": tilt, "zoom": zoom}
+            return {"success": True, "action": req.action, "pan": pan, "tilt": tilt, "zoom": zoom, "vendor": "HIKVISION"}
         else:
+            # Fallback to Dahua CGI if Hikvision ISAPI returns 404
+            if res.status_code in [404, 400]:
+                dahua_code_map = {
+                    "pan_left": "Left", "pan_right": "Right", "tilt_up": "Up", "tilt_down": "Down",
+                    "pan_up_left": "LeftUp", "pan_up_right": "RightUp", "pan_down_left": "LeftDown", "pan_down_right": "RightDown",
+                    "zoom_in": "ZoomAdd", "zoom_out": "ZoomDec"
+                }
+                d_code = dahua_code_map.get(req.action, "Up")
+                d_speed = max(1, min(8, int(round(1 + (user_speed / 100.0) * 7))))
+                d_url = f"http://{nvr.ip}:{nvr.port}/cgi-bin/ptz.cgi?action={'stop' if req.action == 'stop' else 'start'}&channel={camera.channel_number}&code={d_code}&arg1=0&arg2={0 if req.action == 'stop' else d_speed}&arg3=0"
+                res_d = session.get(d_url, timeout=1.8)
+                if res_d.status_code in [200, 204] or "OK" in res_d.text:
+                    return {"success": True, "action": req.action, "vendor": "DAHUA_FALLBACK"}
+
             return {"success": False, "status_code": res.status_code, "detail": res.text[:120]}
     except Exception as e:
         raise HTTPException(
@@ -185,13 +256,17 @@ def get_camera_presets(camera_id: int, db: Session = Depends(get_db), current_us
     if not nvr:
         raise HTTPException(status_code=404, detail="Parent NVR not found.")
 
-    # F-02: Enforce agent scope for non-superadmin users
     if not getattr(current_user, 'is_superadmin', False) and getattr(current_user, 'assigned_agent_id', None) != nvr.agent_id:
         raise HTTPException(status_code=403, detail="Access denied: camera not in your assigned agent scope.")
 
-    url = f"http://{nvr.ip}:{nvr.port}/ISAPI/PTZCtrl/channels/{camera.channel_number}/presets"
+    vendor = (nvr.vendor or "").upper()
     session = get_cached_session(nvr.ip, nvr.username, nvr.password or "")
 
+    # For Dahua: presets 1-8 standard
+    if "DAHUA" in vendor:
+        return {"presets": [{"id": i, "name": f"Preset {i}"} for i in range(1, 9)]}
+
+    url = f"http://{nvr.ip}:{nvr.port}/ISAPI/PTZCtrl/channels/{camera.channel_number}/presets"
     try:
         res = session.get(url, timeout=2.0)
         presets = []
@@ -208,8 +283,8 @@ def get_camera_presets(camera_id: int, db: Session = Depends(get_db), current_us
                     "name": name_el.text if name_el is not None and name_el.text else f"Preset {pid_el.text}"
                 })
         return {"presets": presets}
-    except Exception as e:
-        return {"presets": []}
+    except Exception:
+        return {"presets": [{"id": i, "name": f"Preset {i}"} for i in range(1, 9)]}
 
 
 @router.post("/presets/{camera_id}/goto")
@@ -223,9 +298,18 @@ def goto_preset(camera_id: int, req: PresetActionRequest, db: Session = Depends(
     if not nvr:
         raise HTTPException(status_code=404, detail="Parent NVR not found.")
 
-    url = f"http://{nvr.ip}:{nvr.port}/ISAPI/PTZCtrl/channels/{camera.channel_number}/presets/{req.preset_id}/goto"
+    vendor = (nvr.vendor or "").upper()
     session = get_cached_session(nvr.ip, nvr.username, nvr.password or "")
 
+    if "DAHUA" in vendor:
+        url_d = f"http://{nvr.ip}:{nvr.port}/cgi-bin/ptz.cgi?action=start&channel={camera.channel_number}&code=GotoPreset&arg1=0&arg2={req.preset_id}&arg3=0"
+        try:
+            res = session.get(url_d, timeout=2.0)
+            return {"success": res.status_code in [200, 204] or "OK" in res.text, "preset_id": req.preset_id}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    url = f"http://{nvr.ip}:{nvr.port}/ISAPI/PTZCtrl/channels/{camera.channel_number}/presets/{req.preset_id}/goto"
     try:
         res = session.put(url, timeout=2.0)
         return {"success": res.status_code in [200, 204], "status": res.status_code}
@@ -245,6 +329,17 @@ def set_preset(camera_id: int, req: PresetActionRequest, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Parent NVR not found.")
 
     name = req.name or f"Preset {req.preset_id}"
+    vendor = (nvr.vendor or "").upper()
+    session = get_cached_session(nvr.ip, nvr.username, nvr.password or "")
+
+    if "DAHUA" in vendor:
+        url_d = f"http://{nvr.ip}:{nvr.port}/cgi-bin/ptz.cgi?action=start&channel={camera.channel_number}&code=SetPreset&arg1=0&arg2={req.preset_id}&arg3=0"
+        try:
+            res = session.get(url_d, timeout=2.0)
+            return {"success": res.status_code in [200, 204] or "OK" in res.text, "name": name}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     xml_payload = f"""<?xml version="1.0" encoding="UTF-8"?>
 <PTZPreset version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
     <id>{req.preset_id}</id>
@@ -252,8 +347,6 @@ def set_preset(camera_id: int, req: PresetActionRequest, db: Session = Depends(g
 </PTZPreset>"""
 
     url = f"http://{nvr.ip}:{nvr.port}/ISAPI/PTZCtrl/channels/{camera.channel_number}/presets/{req.preset_id}"
-    session = get_cached_session(nvr.ip, nvr.username, nvr.password or "")
-
     try:
         res = session.put(url, data=xml_payload, headers={"Content-Type": "application/xml"}, timeout=2.0)
         return {"success": res.status_code in [200, 204], "name": name}

@@ -53,6 +53,9 @@ class CameraItem(BaseModel):
     is_ptz: Optional[bool] = False
 
 
+class CameraPTZUpdateRequest(BaseModel):
+    is_ptz: Optional[bool] = None
+
 class ConfirmNVRRequest(BaseModel):
     agent_id: Optional[int] = None
     name: Optional[str] = None
@@ -420,3 +423,37 @@ def delete_nvr(
         print(f"[MediaMTX] Auto-sync after delete warning: {e}")
 
     return {"success": True, "message": f"NVR {nvr_id} deleted successfully."}
+
+@router.patch("/camera/{camera_id}/ptz")
+def toggle_camera_ptz(
+    camera_id: int,
+    req: Optional[CameraPTZUpdateRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Toggle or set PTZ capability for an individual camera."""
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found.")
+
+    if not getattr(current_user, "is_superadmin", False):
+        perms = getattr(current_user, "effective_permissions", [])
+        if "CAM_PTZ_CONTROL" not in perms and "*" not in perms:
+            raise HTTPException(status_code=403, detail="Permission CAM_PTZ_CONTROL required.")
+        if camera.nvr and getattr(current_user, "assigned_agent_id", None) != camera.nvr.agent_id:
+            raise HTTPException(status_code=403, detail="Camera outside your assigned agent scope.")
+
+    if req and req.is_ptz is not None:
+        camera.is_ptz = bool(req.is_ptz)
+    else:
+        camera.is_ptz = not bool(camera.is_ptz)
+
+    db.commit()
+    db.refresh(camera)
+    return {
+        "success": True,
+        "camera_id": camera.id,
+        "is_ptz": bool(camera.is_ptz),
+        "name": camera.name,
+        "message": f"Camera '{camera.name}' PTZ set to {camera.is_ptz}"
+    }

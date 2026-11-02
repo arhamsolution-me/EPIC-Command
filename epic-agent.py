@@ -191,30 +191,30 @@ def verify_rtsp_stream_detailed(
 ) -> Tuple[bool, str]:
     """
     Perform authenticated RTSP DESCRIBE check with Digest & Basic Auth.
-    Returns (is_live: bool, status: str) where status can be:
-      - "OK": Stream is active with valid SDP video track
-      - "NOT_FOUND": Channel does not exist or camera is unplugged (404/454)
-      - "UNAUTHORIZED": Bad username/password (401)
-      - "LOCKED": NVR security lockout triggered
-      - "ERROR": Connection / network error
+    Supports Dahua, Hikvision, and Generic NVRs with socket reconnect on 401.
     """
+    rtsp_url = f"rtsp://{ip}:{port}{path}"
+
+    def try_describe_req(sock, req_str):
+        try:
+            sock.sendall(req_str.encode("utf-8"))
+            return sock.recv(4096).decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
             s.connect((ip, port))
 
-            cseq = 1
-            rtsp_url = f"rtsp://{ip}:{port}{path}"
-
             # Step 1: Initial unauthenticated probe
             req1 = (
                 f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
-                f"CSeq: {cseq}\r\n"
+                f"CSeq: 1\r\n"
                 f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
                 f"Accept: application/sdp\r\n\r\n"
             )
-            s.sendall(req1.encode("utf-8"))
-            data = s.recv(4096).decode("utf-8", errors="ignore")
+            data = try_describe_req(s, req1)
 
             # Unauthenticated open stream 200 OK
             if "RTSP/1.0 200" in data:
@@ -230,11 +230,9 @@ def verify_rtsp_stream_detailed(
                 if not username:
                     return (False, "UNAUTHORIZED")
 
-                # Check if already locked by Dahua / Hikvision anti-brute-force
                 if "lock" in data.lower() or "illegal" in data.lower():
                     return (False, "LOCKED")
 
-                cseq += 1
                 digest_match = re.search(r'WWW-Authenticate:\s*Digest\s+([^\r\n]+)', data, re.IGNORECASE)
                 basic_match = re.search(r'WWW-Authenticate:\s*Basic', data, re.IGNORECASE)
 
@@ -247,17 +245,26 @@ def verify_rtsp_stream_detailed(
 
                     ha1 = hashlib.md5(f"{username}:{realm}:{password}".encode("utf-8")).hexdigest()
 
-                    # Attempt A: Match request line exactly with full RTSP URL (Standard for VLC, FFmpeg, Dahua)
-                    auth_hdr_full = make_digest_auth_header(username, realm, nonce, rtsp_url, ha1, qop, opaque)
-                    req2 = (
+                    # Attempt A: Dahua Digest (Request line has full rtsp_url, Digest uri header has relative path)
+                    auth_hdr_path = make_digest_auth_header(username, realm, nonce, path, ha1, qop, opaque)
+                    req2_dahua = (
                         f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
-                        f"CSeq: {cseq}\r\n"
+                        f"CSeq: 2\r\n"
                         f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
                         f"Accept: application/sdp\r\n"
-                        f"{auth_hdr_full}\r\n\r\n"
+                        f"{auth_hdr_path}\r\n\r\n"
                     )
-                    s.sendall(req2.encode("utf-8"))
-                    data2 = s.recv(4096).decode("utf-8", errors="ignore")
+
+                    data2 = try_describe_req(s, req2_dahua)
+                    # If socket was closed by NVR after 401, reconnect a fresh socket
+                    if not data2:
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                                s2.settimeout(timeout)
+                                s2.connect((ip, port))
+                                data2 = try_describe_req(s2, req2_dahua)
+                        except Exception:
+                            pass
 
                     if "RTSP/1.0 200" in data2:
                         return (True, "OK")
@@ -268,43 +275,56 @@ def verify_rtsp_stream_detailed(
                     if "RTSP/1.0 404" in data2 or "RTSP/1.0 454" in data2:
                         return (False, "NOT_FOUND")
 
-                    # Attempt B: Fallback with relative path URI if server strictly requires relative path
-                    if "RTSP/1.0 401" in data2:
-                        cseq += 1
-                        auth_hdr_rel = make_digest_auth_header(username, realm, nonce, path, ha1, qop, opaque)
-                        req3 = (
-                            f"DESCRIBE {path} RTSP/1.0\r\n"
-                            f"CSeq: {cseq}\r\n"
-                            f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
-                            f"Accept: application/sdp\r\n"
-                            f"{auth_hdr_rel}\r\n\r\n"
-                        )
-                        s.sendall(req3.encode("utf-8"))
-                        data3 = s.recv(4096).decode("utf-8", errors="ignore")
+                    # Attempt B: RFC Standard / Hikvision Digest (both Request line and Digest header uri have full rtsp_url)
+                    auth_hdr_full = make_digest_auth_header(username, realm, nonce, rtsp_url, ha1, qop, opaque)
+                    req2_rfc = (
+                        f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
+                        f"CSeq: 3\r\n"
+                        f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
+                        f"Accept: application/sdp\r\n"
+                        f"{auth_hdr_full}\r\n\r\n"
+                    )
 
-                        if "RTSP/1.0 200" in data3:
-                            return (True, "OK")
+                    data3 = try_describe_req(s, req2_rfc)
+                    if not data3:
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s3:
+                                s3.settimeout(timeout)
+                                s3.connect((ip, port))
+                                data3 = try_describe_req(s3, req2_rfc)
+                        except Exception:
+                            pass
 
-                        if "lock" in data3.lower() or "illegal" in data3.lower():
-                            return (False, "LOCKED")
+                    if "RTSP/1.0 200" in data3:
+                        return (True, "OK")
 
-                        if "RTSP/1.0 404" in data3 or "RTSP/1.0 454" in data3:
-                            return (False, "NOT_FOUND")
+                    if "lock" in data3.lower() or "illegal" in data3.lower():
+                        return (False, "LOCKED")
 
-                        return (False, "UNAUTHORIZED")
+                    if "RTSP/1.0 404" in data3 or "RTSP/1.0 454" in data3:
+                        return (False, "NOT_FOUND")
+
+                    return (False, "UNAUTHORIZED")
 
                 elif basic_match or "Basic" in data:
                     creds = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
                     auth_hdr = f"Authorization: Basic {creds}"
                     req2 = (
                         f"DESCRIBE {rtsp_url} RTSP/1.0\r\n"
-                        f"CSeq: {cseq}\r\n"
+                        f"CSeq: 2\r\n"
                         f"User-Agent: EPIC-Edge-Agent/3.2\r\n"
                         f"Accept: application/sdp\r\n"
                         f"{auth_hdr}\r\n\r\n"
                     )
-                    s.sendall(req2.encode("utf-8"))
-                    data2 = s.recv(4096).decode("utf-8", errors="ignore")
+                    data2 = try_describe_req(s, req2)
+                    if not data2:
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                                s2.settimeout(timeout)
+                                s2.connect((ip, port))
+                                data2 = try_describe_req(s2, req2)
+                        except Exception:
+                            pass
                     if "RTSP/1.0 200" in data2:
                         return (True, "OK")
                     if "lock" in data2.lower():
@@ -433,7 +453,11 @@ def probe_local_nvr(
                 detected_http_port = port
                 print(f"      {GREEN}[✓]{RESET} User HTTP Port {port} verified (Status: OPEN, Protocol: HTTP)")
             else:
-                print(f"      {YELLOW}[!]{RESET} User Port {port} is open, but protocol is {proto} (not HTTP Web). Scanning dynamically for true HTTP port...")
+                if port in (37777, 37725) or (37700 <= port <= 37799):
+                    print(f"      {GREEN}[✓]{RESET} User Port {port} verified (Dahua TCP Private Service / SDK).")
+                    vendor = "DAHUA"
+                else:
+                    print(f"      {YELLOW}[!]{RESET} User Port {port} is open, but protocol is {proto} (not HTTP Web). Scanning dynamically for true HTTP port...")
         else:
             print(f"      {YELLOW}[!]{RESET} User specified HTTP Port {port} is CLOSED on {ip}.")
 
@@ -450,6 +474,16 @@ def probe_local_nvr(
                 print(f"      {YELLOW}[!]{RESET} User Port {rtsp_port} is open, but protocol is {proto} (not RTSP Stream). Scanning dynamically for true RTSP port...")
         else:
             print(f"      {YELLOW}[!]{RESET} User specified RTSP Port {rtsp_port} is CLOSED on {ip}.")
+
+    # 2. Fast check for common HTTP ports before full port scan
+    if not detected_http_port:
+        for hp in [80, 8080, 8000, 88, 443, 8888, 81]:
+            if check_tcp_port(ip, hp, timeout=1.2):
+                hproto = probe_port_protocol(ip, hp, timeout=1.2)
+                if hproto == "HTTP":
+                    detected_http_port = hp
+                    print(f"      {GREEN}[✓]{RESET} Dynamically detected HTTP Web Service on Port {hp}")
+                    break
 
     # 2. Dynamic Discovery: If either port is still not resolved, scan target host dynamically
     if not detected_http_port or not detected_rtsp_port:
@@ -601,16 +635,19 @@ def probe_local_nvr(
         ]
         active_pattern = None
         for m_pat, s_pat, vname in patterns:
-            is_live, status = verify_rtsp_stream_detailed(ip, detected_rtsp_port, m_pat.format(ch=1), username, password, timeout=2.0)
-            if status in ("UNAUTHORIZED", "LOCKED"):
-                print(f"      {RED}[!] RTSP Authentication Failed or Account Locked ({status}). Halting probing immediately to protect NVR.{RESET}")
-                if status == "LOCKED":
-                    print(f"      {YELLOW}[!] The NVR account is locked. Reboot the NVR or wait 20 minutes.{RESET}")
-                dahua_auth_failed = True
-                break
-            if is_live:
-                active_pattern = (m_pat, s_pat, vname)
-                vendor = vname
+            for test_ch in [1, 2, 3, 4]:
+                is_live, status = verify_rtsp_stream_detailed(ip, detected_rtsp_port, m_pat.format(ch=test_ch), username, password, timeout=2.0)
+                if status in ("UNAUTHORIZED", "LOCKED"):
+                    print(f"      {RED}[!] RTSP Authentication Failed or Account Locked ({status}). Halting probing immediately to protect NVR.{RESET}")
+                    if status == "LOCKED":
+                        print(f"      {YELLOW}[!] The NVR account is locked. Reboot the NVR or wait 20 minutes.{RESET}")
+                    dahua_auth_failed = True
+                    break
+                if is_live:
+                    active_pattern = (m_pat, s_pat, vname)
+                    vendor = vname
+                    break
+            if active_pattern or dahua_auth_failed:
                 break
 
         if active_pattern and not dahua_auth_failed:
@@ -731,10 +768,47 @@ def probe_local_nvr(
             cam_clean.pop("path", None)
             verified_cameras.append(cam_clean)
 
+    # Fail-safe: If candidate probing yielded 0 channels, but RTSP port is open, configure channels without aborting!
+    if not verified_cameras and not dahua_auth_failed and not nvr_locked and detected_rtsp_port:
+        print(f"\n      {YELLOW}[!]{RESET} Could not automatically verify video signals on individual channels.")
+        print(f"      {GREEN}[✓]{RESET} Target RTSP Port {detected_rtsp_port} is OPEN and verified on {ip}.")
+        print(f"      Streaming Protocol Template: {vendor}")
+        try:
+            ch_inp = input("      Enter total NVR channels to configure (e.g. 4, 8, 16, 32) [Default: 16]: ").strip()
+            total_channels = int(ch_inp) if ch_inp.isdigit() and int(ch_inp) > 0 else 16
+        except Exception:
+            total_channels = 16
+
+        m_pat = "/cam/realmonitor?channel={ch}&subtype=0" if vendor == "DAHUA" else "/Streaming/Channels/{ch}01"
+        s_pat = "/cam/realmonitor?channel={ch}&subtype=1" if vendor == "DAHUA" else "/Streaming/Channels/{ch}02"
+        for ch in range(1, total_channels + 1):
+            verified_cameras.append({
+                "channel_number": ch,
+                "name": f"Camera {ch}",
+                "rtsp_stream_url": f"rtsp://{auth_part}{ip}:{detected_rtsp_port}{m_pat.format(ch=ch)}",
+                "sub_stream_url": f"rtsp://{auth_part}{ip}:{detected_rtsp_port}{s_pat.format(ch=ch)}",
+                "status": "reachable",
+                "is_ptz": False
+            })
+
     verified_cameras.sort(key=lambda c: c["channel_number"])
 
     if verified_cameras:
-        print(f"      {GREEN}[✓]{RESET} Found {len(verified_cameras)} camera channels ({vendor}) on NVR!")
+        print(f"      {GREEN}[✓]{RESET} Ready to register {len(verified_cameras)} camera channels ({vendor}) on NVR!")
+        # Optional PTZ channel setup
+        try:
+            ptz_inp = input("      Enter any PTZ camera channel numbers (e.g. 1, 3 or press Enter to skip): ").strip()
+            if ptz_inp:
+                ptz_nums = set()
+                for p in re.split(r'[,;\s]+', ptz_inp):
+                    if p.isdigit():
+                        ptz_nums.add(int(p))
+                for c in verified_cameras:
+                    if c["channel_number"] in ptz_nums:
+                        c["is_ptz"] = True
+                        print(f"      {GREEN}[✓]{RESET} Channel {c['channel_number']} ({c['name']}) marked as PTZ Motorized")
+        except Exception:
+            pass
     else:
         print(f"      {RED}[!] No active live streaming cameras could be verified on NVR at {ip}.{RESET}")
 
