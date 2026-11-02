@@ -18,6 +18,7 @@ import {
   MoreVertical,
   Monitor,
   Maximize2,
+  Minimize2,
   Camera as CameraIcon,
   Bot,
   Search,
@@ -290,6 +291,19 @@ function MainApp() {
   const [isSavingNvr, setIsSavingNvr] = useState(false);
   const [editNvrError, setEditNvrError] = useState(null);
 
+  // Fullscreen Maximized Camera State
+  const [maximizedCamId, setMaximizedCamId] = useState(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && maximizedCamId) {
+        setMaximizedCamId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [maximizedCamId]);
+
   // Add NVR Modal (Dedicated Remote Edge Agent Mode)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [agentDeployStatus, setAgentDeployStatus] = useState(null);
@@ -524,7 +538,6 @@ function MainApp() {
         setNewAgentName('');
         if (data.agent) {
           setSelectedAgentId(data.agent.id);
-          setNvrAddMode('edge_agent');
           setAgentDeployStatus(null);
           setIsModalOpen(true);
         }
@@ -784,6 +797,9 @@ function MainApp() {
       nvrUsername: nvr.username
     }))
   );
+
+  // Fullscreen maximized camera object
+  const maximizedCam = allCameras.find((c) => c.id === maximizedCamId) || null;
 
   // Selected PTZ Camera
   const selectedPtzCam = allCameras.find((c) => c.id === selectedPtzCamId) || allCameras.find((c) => c.is_ptz) || allCameras[0] || null;
@@ -2407,16 +2423,18 @@ function MainApp() {
                                     </button>
                                   )}
 
-                                  {/* Maximize Button */}
-                                  <a
-                                    href={`${WEBRTC_STREAM_BASE}/camera_${cam.id}`}
-                                    target="_blank"
-                                    rel="noreferrer"
+                                  {/* Maximize Button - In-page Fullscreen View */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setMaximizedCamId(cam.id);
+                                    }}
                                     className="tile-icon-btn"
-                                    title="Fullscreen WebRTC Stream"
+                                    title="Fullscreen Camera Stream"
                                   >
                                     <Maximize2 size={12} />
-                                  </a>
+                                  </button>
                                 </div>
                               </div>
 
@@ -2829,6 +2847,139 @@ function MainApp() {
           </div>
         </div>
       </main>
+
+      {/* FULLSCREEN MAXIMIZED CAMERA OVERLAY */}
+      {maximizedCam && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            background: '#090d16',
+            zIndex: 999999,
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          {/* Fullscreen Overlay Header */}
+          <div
+            style={{
+              padding: '14px 24px',
+              background: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(8px)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              zIndex: 10
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <span className="pulse-dot" style={{ width: '9px', height: '9px' }}></span>
+              <strong style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 700 }}>
+                {maximizedCam.name}
+              </strong>
+              <span style={{ color: '#94a3b8', fontSize: '0.80rem', padding: '3px 9px', background: 'rgba(255,255,255,0.08)', borderRadius: '5px' }}>
+                CH {maximizedCam.channel_number}
+              </span>
+              <span style={{ color: '#34d399', fontSize: '0.74rem', fontWeight: 600, padding: '3px 9px', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '5px' }}>
+                LIVE WebRTC (WHEP)
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {/* PTZ Button */}
+              {hasPermission('CAM_PTZ_CONTROL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPtzCamId(maximizedCam.id);
+                    setIsPtzOpen(true);
+                  }}
+                  style={{
+                    background: maximizedCam.is_ptz ? '#059669' : 'rgba(255,255,255,0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '7px 14px',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  title={maximizedCam.is_ptz ? "PTZ Active" : "Enable PTZ"}
+                >
+                  <Sliders size={13} />
+                  <span>{maximizedCam.is_ptz ? 'PTZ Active' : 'PTZ Controls'}</span>
+                </button>
+              )}
+
+              {/* Snapshot Button */}
+              {hasPermission('CAM_SNAPSHOT') && (
+                <button
+                  type="button"
+                  onClick={() => handleCaptureSnapshot(maximizedCam.id, maximizedCam.name)}
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '7px 14px',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  title="Capture Snapshot"
+                >
+                  <CameraIcon size={13} />
+                  <span>Snapshot</span>
+                </button>
+              )}
+
+              {/* Exit Fullscreen */}
+              <button
+                type="button"
+                onClick={() => setMaximizedCamId(null)}
+                style={{
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '7px 16px',
+                  fontSize: '0.80rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                title="Exit Fullscreen (ESC)"
+              >
+                <Minimize2 size={15} />
+                <span>Exit Fullscreen</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Fullscreen Video Feed */}
+          <div style={{ flex: 1, position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+            <LiveWebRtcCamera
+              streamPath={`camera_${maximizedCam.id}`}
+              camName={maximizedCam.name}
+              isMuted={isMuted}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ADD NVR MODAL DIALOG */}
       {isModalOpen && (
